@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add New Bet</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header class="glass-card">
+            <h1>Add New Bet</h1>
+             <div class="controls">
+                <select id="currencySelector">
+                    <option value="USD">$ USD</option>
+                    <option value="PHP">₱ PHP</option>
+                    <option value="THB">฿ THB</option>
+                    <option value="MYR">RM MYR</option>
+                    <option value="HKD">HK$ HKD</option>
+                </select>
+                <button id="themeSwitcher" class="icon-btn">
+                    <i class="ph-fill ph-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- NAVIGATION -->
+        <nav class="main-nav">
+            <a href="index.html"><i class="ph-fill ph-chart-pie-slice"></i> Dashboard</a>
+            <a href="add.html" class="active"><i class="ph-fill ph-plus-circle"></i> Add Bet</a>
+        </nav>
+
+        <main>
+            <!-- ADD BET FORM -->
+            <form id="addBetForm" class="glass-card">
+                <div class="form-group">
+                    <label for="betDate">Date (Manila Time):</label>
+                    <input type="date" id="betDate" required>
+                </div>
+                 <div class="form-group">
+                    <label for="sport">Sport:</label>
+                    <input type="text" id="sport" placeholder="e.g., NBA" required>
+                </div>
+                <div class="form-group full-width">
+                    <label for="betDetails">Bet Details:</label>
+                    <input type="text" id="betDetails" placeholder="e.g., Lakers to win vs Celtics" required>
+                </div>
+                <div class="form-group">
+                    <label for="stake">Stake:</label>
+                    <input type="number" id="stake" step="0.01" min="0" placeholder="100" required>
+                </div>
+                <div class="form-group">
+                    <label for="odds">Odds:</label>
+                    <input type="number" id="odds" step="0.01" min="1" placeholder="1.85" required>
+                </div>
+                <div class="form-group full-width">
+                    <label for="result">Result:</label>
+                    <select id="result" required>
+                        <option value="Pending">Pending</option>
+                        <option value="Won">Won</option>
+                        <option value="Lost">Lost</option>
+                        <option value="Void">Void</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label for="notes">Notes (Optional):</label>
+                    <textarea id="notes" placeholder="e.g., Key player injured, good value."></textarea>
+                </div>
+                <button type="submit"><i class="ph-fill ph-paper-plane-tilt"></i> Log Bet</button>
+            </form>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

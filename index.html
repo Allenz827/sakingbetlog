@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bet Tracker Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Using Phosphor Icons for a modern look -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header class="glass-card">
+            <h1>Bet Tracker</h1>
+            <div class="controls">
+                <select id="currencySelector">
+                    <option value="USD">$ USD</option>
+                    <option value="PHP">₱ PHP</option>
+                    <option value="THB">฿ THB</option>
+                    <option value="MYR">RM MYR</option>
+                    <option value="HKD">HK$ HKD</option>
+                </select>
+                <button id="themeSwitcher" class="icon-btn">
+                    <i class="ph-fill ph-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- NAVIGATION -->
+        <nav class="main-nav">
+            <a href="index.html" class="active"><i class="ph-fill ph-chart-pie-slice"></i> Dashboard</a>
+            <a href="add.html"><i class="ph-fill ph-plus-circle"></i> Add Bet</a>
+        </nav>
+
+        <main>
+            <!-- FILTERS -->
+            <div class="filter-controls">
+                <button class="filter-btn active" data-period="all">All Time</button>
+                <button class="filter-btn" data-period="year">This Year</button>
+                <button class="filter-btn" data-period="month">This Month</button>
+                <button class="filter-btn" data-period="7d">Past 7d</button>
+                <button class="filter-btn" data-period="yesterday">Yesterday</button>
+                <button class="filter-btn" data-period="today">Today</button>
+                <div class="custom-date-filter">
+                    <input type="date" id="startDate">
+                    <span>to</span>
+                    <input type="date" id="endDate">
+                    <button id="customDateBtn" class="icon-btn"><i class="ph-fill ph-funnel"></i></button>
+                </div>
+            </div>
+
+            <!-- STATS -->
+            <div class="stats-grid">
+                <div class="stat-card glass-card">
+                    <h3>Net Profit</h3>
+                    <p id="netProfit" class="positive">₱0.00</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>Turnover</h3>
+                    <p id="turnover">₱0.00</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>ROI</h3>
+                    <p id="roi">0.00%</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>Accuracy</h3>
+                    <p id="accuracy">0.00%</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>Total Bets</h3>
+                    <p id="totalBets">0</p>
+                </div>
+                 <div class="stat-card glass-card">
+                    <h3>Avg. Stake</h3>
+                    <p id="avgStake">₱0.00</p>
+                </div>
+            </div>
+
+            <!-- CHART -->
+            <div class="chart-container glass-card">
+                <canvas id="profitChart"></canvas>
+            </div>
+
+            <!-- BET LIST -->
+            <div class="bet-list-container glass-card">
+                <div class="bet-list-header">
+                    <h2>Recent Bets</h2>
+                    <div class="sort-controls">
+                        <label for="sortSelector">Sort by:</label>
+                        <select id="sortSelector">
+                            <option value="date_desc">Date (Newest)</option>
+                            <option value="date_asc">Date (Oldest)</option>
+                            <option value="result">Result</option>
+                            <option value="stake_desc">Stake (High-Low)</option>
+                            <option value="stake_asc">Stake (Low-High)</option>
+                            <option value="profit_desc">P/L (High-Low)</option>
+                        </select>
+                    </div>
+                </div>
+                 <div class="io-controls">
+                     <button id="exportBtn"><i class="ph-fill ph-file-arrow-down"></i> Export</button>
+                     <label for="importFile" class="import-label"><i class="ph-fill ph-file-arrow-up"></i> Import</label>
+                     <input type="file" id="importFile" accept=".xlsx, .xls" style="display: none;">
+                </div>
+                <div style="overflow-x: auto;">
+                    <table id="betTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Sport</th>
+                                <th>Bet Details</th>
+                                <th>Stake</th>
+                                <th>Odds</th>
+                                <th>Result</th>
+                                <th>P/L</th>
+                                <th>Notes</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="betList">
+                            <!-- Bets will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- EDIT MODAL -->
+    <div id="editModal" class="modal">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h2>Edit Bet</h2>
+                <button class="close-button">&times;</button>
+            </div>
+            <form id="editForm">
+                <div class="form-group">
+                    <label for="edit-date">Date:</label>
+                    <input type="date" id="edit-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-sport">Sport:</label>
+                    <input type="text" id="edit-sport" placeholder="e.g., Basketball, Soccer" required>
+                </div>
+                <div class="form-group full-width">
+                    <label for="edit-details">Bet Details:</label>
+                    <input type="text" id="edit-details" placeholder="e.g., Team A to Win" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-stake">Stake:</label>
+                    <input type="number" id="edit-stake" step="0.01" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-odds">Odds:</label>
+                    <input type="number" id="edit-odds" step="0.01" min="1" required>
+                </div>
+                <div class="form-group full-width">
+                    <label for="edit-result">Result:</label>
+                    <select id="edit-result" required>
+                        <option value="Pending">Pending</option>
+                        <option value="Won">Won</option>
+                        <option value="Lost">Lost</option>
+                        <option value="Void">Void</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label for="edit-notes">Notes:</label>
+                    <textarea id="edit-notes" placeholder="Any thoughts on this bet?"></textarea>
+                </div>
+                <input type="hidden" id="edit-id">
+                <button type="submit"><i class="ph-fill ph-floppy-disk"></i> Save Changes</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- NOTIFICATION CONTAINER -->
+    <div id="notification-container" class="notification-container">
+        <div id="notification" class="notification glass-card">
+            <p id="notification-message"></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
