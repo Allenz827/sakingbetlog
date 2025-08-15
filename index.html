@@ -9,12 +9,6 @@
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
 <body>
-    <!-- LOADING OVERLAY -->
-    <div id="loadingOverlay">
-        <div class="loader"></div>
-        <p>Connecting to database...</p>
-    </div>
-
     <div class="container">
         <!-- HEADER -->
         <header class="glass-card">
@@ -39,121 +33,113 @@
             <a href="add.html"><i class="ph-fill ph-plus-circle"></i> Add Bet</a>
         </nav>
 
-        <main>
-            <!-- USER ID DISPLAY -->
-            <p id="userIdDisplay" class="user-id-text"></p>
-
-            <!-- FILTERS -->
-            <div class="filter-controls">
-                <button class="filter-btn active" data-period="all">All Time</button>
-                <button class="filter-btn" data-period="year">This Year</button>
-                <button class="filter-btn" data-period="month">This Month</button>
-                <button class="filter-btn" data-period="7d">Past 7d</button>
-                <button class="filter-btn" data-period="yesterday">Yesterday</button>
-                <button class="filter-btn" data-period="today">Today</button>
-                <div class="custom-date-filter">
-                    <input type="date" id="startDate">
-                    <span>to</span>
-                    <input type="date" id="endDate">
-                    <button id="customDateBtn" class="icon-btn"><i class="ph-fill ph-funnel"></i></button>
-                </div>
-            </div>
-
-            <!-- STATS -->
+        <!-- DASHBOARD STATS -->
+        <main class="dashboard-main">
             <div class="stats-grid">
                 <div class="stat-card glass-card">
-                    <h3>Net Profit</h3>
-                    <p id="netProfit" class="positive">₱0.00</p>
+                    <p>Net Profit</p>
+                    <h2 id="netProfit" class="positive">₱0.00</h2>
                 </div>
                 <div class="stat-card glass-card">
-                    <h3>Turnover</h3>
-                    <p id="turnover">₱0.00</p>
+                    <p>Turnover</p>
+                    <h2 id="turnover">₱0.00</h2>
                 </div>
                 <div class="stat-card glass-card">
-                    <h3>ROI</h3>
-                    <p id="roi">0.00%</p>
+                    <p>ROI</p>
+                    <h2 id="roi">0.00%</h2>
                 </div>
                 <div class="stat-card glass-card">
-                    <h3>Accuracy</h3>
-                    <p id="accuracy">0.00%</p>
+                    <p>Accuracy</p>
+                    <h2 id="accuracy">0.00%</h2>
                 </div>
-                <div class="stat-card glass-card">
-                    <h3>Total Bets</h3>
-                    <p id="totalBets">0</p>
+                <div class="stat-card stat-small glass-card">
+                    <p>Total Bets</p>
+                    <h3 id="totalBets">0</h3>
                 </div>
-                <div class="stat-card glass-card">
-                    <h3>Won Bets</h3>
-                    <p id="wonBets">0</p>
+                <div class="stat-card stat-small glass-card">
+                    <p>Won</p>
+                    <h3 id="wonBets">0</h3>
                 </div>
-                <div class="stat-card glass-card">
-                    <h3>Lost Bets</h3>
-                    <p id="lostBets">0</p>
+                <div class="stat-card stat-small glass-card">
+                    <p>Lost</p>
+                    <h3 id="lostBets">0</h3>
                 </div>
-                <div class="stat-card glass-card">
-                    <h3>Pending Bets</h3>
-                    <p id="pendingBets">0</p>
+                <div class="stat-card stat-small glass-card">
+                    <p>Pending</p>
+                    <h3 id="pendingBets">0</h3>
                 </div>
             </div>
 
-            <!-- CHART -->
-            <div class="chart-container glass-card">
-                <canvas id="profitChart"></canvas>
+            <!-- FILTERS & IMPORT -->
+            <div class="controls-container">
+                <div class="filter-controls">
+                    <button class="filter-btn active" data-period="all">All Time</button>
+                    <button class="filter-btn" data-period="year">This Year</button>
+                    <button class="filter-btn" data-period="month">This Month</button>
+                    <button class="filter-btn" data-period="7d">Last 7 Days</button>
+                    <button class="filter-btn" data-period="today">Today</button>
+                </div>
+                <div class="custom-filter">
+                    <input type="date" id="startDate">
+                    <input type="date" id="endDate">
+                    <button id="customDateBtn" class="glass-btn">Filter</button>
+                </div>
+                <div class="sort-controls">
+                    <label for="sortSelector">Sort:</label>
+                    <select id="sortSelector">
+                        <option value="date_desc">Date (Newest First)</option>
+                        <option value="date_asc">Date (Oldest First)</option>
+                        <option value="stake_desc">Stake (High to Low)</option>
+                        <option value="stake_asc">Stake (Low to High)</option>
+                        <option value="odds_desc">Odds (High to Low)</option>
+                        <option value="odds_asc">Odds (Low to High)</option>
+                    </select>
+                </div>
+                <div class="import-controls">
+                    <label for="importFile" class="import-btn glass-btn">
+                        <i class="ph-fill ph-file-arrow-up"></i> Import Excel
+                    </label>
+                    <input type="file" id="importFile" accept=".xlsx, .xls">
+                </div>
             </div>
 
-            <!-- BETS TABLE & CONTROLS -->
+            <!-- BETS LIST -->
             <div class="table-container glass-card">
-                <div class="io-controls">
-                    <div class="sort-control">
-                        <label for="sortSelector">Sort by:</label>
-                        <select id="sortSelector">
-                            <option value="date_desc">Date (Newest)</option>
-                            <option value="date_asc">Date (Oldest)</option>
-                            <option value="stake_desc">Stake (High)</option>
-                            <option value="stake_asc">Stake (Low)</option>
-                            <option value="odds_desc">Odds (High)</option>
-                            <option value="odds_asc">Odds (Low)</option>
-                        </select>
-                    </div>
-                    <div class="export-import-controls">
-                        <label for="importFile" class="import-label">
-                            <i class="ph-fill ph-upload"></i> Import CSV/XLSX
-                        </label>
-                        <input type="file" id="importFile" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
-                        <button id="exportButton" class="action-btn"><i class="ph-fill ph-download"></i> Export</button>
-                    </div>
-                </div>
-                <div class="responsive-table">
-                    <table id="betTable">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Sport</th>
-                                <th>Details</th>
-                                <th>Stake</th>
-                                <th>Odds</th>
-                                <th>Result</th>
-                                <th>P/L</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="betList">
-                            <!-- Bet rows will be injected here by JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
+                <table id="betTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Sport</th>
+                            <th>Details</th>
+                            <th>Stake</th>
+                            <th>Odds</th>
+                            <th>Result</th>
+                            <th>P/L</th>
+                            <th class="text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="betList">
+                        <!-- Bet rows will be inserted here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- CHARTS -->
+            <div class="chart-card glass-card">
+                <h3>Cumulative Profit/Loss</h3>
+                <canvas id="profitChart"></canvas>
             </div>
         </main>
     </div>
 
-    <!-- EDIT BET MODAL -->
-    <div id="editModal" class="modal-overlay">
+    <!-- MODALS -->
+    <!-- EDIT MODAL -->
+    <div id="editModal" class="modal">
         <div class="modal-content glass-card">
-            <div class="modal-header">
-                <h2>Edit Bet</h2>
-                <button id="closeEditModal" class="close-button">&times;</button>
-            </div>
-            <form id="editBetForm" class="form-grid">
-                <div class="form-group">
+            <button id="closeEditModal" class="close-button">&times;</button>
+            <h2>Edit Bet</h2>
+            <form id="editBetForm">
+                <div class="form-group full-width">
                     <label for="edit-date">Date:</label>
                     <input type="date" id="edit-date" required>
                 </div>
@@ -161,7 +147,7 @@
                     <label for="edit-sport">Sport:</label>
                     <input type="text" id="edit-sport" required>
                 </div>
-                <div class="form-group full-width">
+                <div class="form-group">
                     <label for="edit-details">Details:</label>
                     <input type="text" id="edit-details" required>
                 </div>
@@ -192,26 +178,28 @@
         </div>
     </div>
     
-    <!-- CUSTOM CONFIRMATION MODAL -->
-    <div id="confirmModal" class="modal-overlay">
+    <!-- CONFIRMATION MODAL -->
+    <div id="confirmModal" class="modal">
         <div class="modal-content glass-card">
-            <div class="modal-header">
-                <h2>Confirmation</h2>
-                <button id="closeConfirmModal" class="close-button">&times;</button>
-            </div>
-            <p id="confirmMessage"></p>
-            <div class="modal-actions">
-                <button id="cancelBtn" class="action-btn">Cancel</button>
-                <button id="confirmBtn" class="action-btn danger">Confirm</button>
+            <button id="closeConfirmModal" class="close-button">&times;</button>
+            <p id="confirmMessage" class="text-center"></p>
+            <div class="modal-buttons">
+                <button id="confirmBtn" class="glass-btn">Confirm</button>
+                <button id="cancelBtn" class="glass-btn">Cancel</button>
             </div>
         </div>
     </div>
-
+    
     <!-- NOTIFICATION CONTAINER -->
     <div id="notification-container" class="notification-container">
         <div id="notification" class="notification glass-card">
             <p id="notification-message"></p>
         </div>
+    </div>
+    
+    <!-- LOADER OVERLAY -->
+    <div id="loadingOverlay">
+        <div class="loader"></div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
