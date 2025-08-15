@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTheme = currentTheme === 'light' ? 'dark' : 'light';
                 localStorage.setItem('theme', currentTheme);
                 applyTheme(currentTheme);
-                if (typeof updateUI === 'function') updateUI();
+                updateAllUI();
             });
         }
         if (currencySelector) {
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currencySelector.addEventListener('change', (e) => {
                 currentCurrency = currencies[e.target.value];
                 localStorage.setItem('currency', JSON.stringify(currentCurrency));
-                if (typeof updateUI === 'function') updateUI();
+                updateAllUI();
             });
         }
     };
@@ -147,28 +147,33 @@ document.addEventListener('DOMContentLoaded', () => {
             // Fetch all bets
             bets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
             
-            // Sort bets client-side based on the current sort criteria
-            const sortedBets = sortBets(bets, currentSortCriteria);
-            
-            if (document.getElementById('profitChart')) {
-                // If on the dashboard page, update the UI with the newly sorted bets
-                const filterButtons = document.querySelectorAll('.filter-btn');
-                const activeFilter = document.querySelector('.filter-btn.active');
-                const period = activeFilter ? activeFilter.dataset.period : 'all';
-                let customDates = {};
-                if (period === 'custom') {
-                    customDates.start = document.getElementById('startDate').value;
-                    customDates.end = document.getElementById('endDate').value;
-                }
-                const filteredBets = filterBets(bets, period, customDates);
-                displayStats(filteredBets);
-                displayBetList(sortBets(filteredBets, currentSortCriteria));
-                renderProfitChart(filteredBets);
-            }
+            // Call the unified UI update function
+            updateAllUI();
+
         }, error => {
             console.error("Error fetching bets:", error);
             showNotification("Error fetching your bets.", "error");
         });
+    };
+
+    // --- UNIFIED UI UPDATE FUNCTION ---
+    const updateAllUI = () => {
+        if (!document.getElementById('betList')) return; // Exit if not on the dashboard page
+        
+        const activeFilter = document.querySelector('.filter-btn.active');
+        const period = activeFilter ? activeFilter.dataset.period : 'all';
+        let customDates = {};
+        if (period === 'custom') {
+            customDates.start = document.getElementById('startDate').value;
+            customDates.end = document.getElementById('endDate').value;
+        }
+
+        const filteredBets = filterBets(bets, period, customDates);
+        const sortedBets = sortBets(filteredBets, currentSortCriteria);
+        
+        displayStats(filteredBets);
+        displayBetList(sortedBets);
+        renderProfitChart(filteredBets);
     };
 
     // --- PAGE-SPECIFIC LOGIC ---
@@ -206,23 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // DASHBOARD PAGE
-    const updateUI = () => {
-        const activeFilter = document.querySelector('.filter-btn.active');
-        const period = activeFilter ? activeFilter.dataset.period : 'all';
-        let customDates = {};
-        if (period === 'custom') {
-            customDates.start = document.getElementById('startDate').value;
-            customDates.end = document.getElementById('endDate').value;
-        }
-        const filteredBets = filterBets(bets, period, customDates);
-        const sortedBets = sortBets(filteredBets, currentSortCriteria);
-        displayStats(filteredBets);
-        displayBetList(sortedBets);
-        renderProfitChart(filteredBets);
-    };
-
     const displayStats = (filteredBets) => {
-        // Your existing displayStats logic
         if (!document.getElementById('netProfit')) return;
 
         const totalStake = filteredBets.reduce((sum, bet) => sum + bet.stake, 0);
@@ -251,7 +240,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = document.getElementById('profitChart');
         if (!ctx) return;
 
-        // Your existing chart logic
         if (profitChart) profitChart.destroy();
 
         const dailyProfits = filteredBets.reduce((acc, bet) => {
@@ -394,15 +382,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const statusClass = bet.result.toLowerCase();
 
             row.innerHTML = `
-                <td>${bet.date}</td>
-                <td>${bet.sport}</td>
-                <td>${bet.details}</td>
-                <td>${formatCurrency(bet.stake)}</td>
-                <td>${bet.odds.toFixed(2)}</td>
-                <td class="status-cell">
+                <td data-label="Date">${bet.date}</td>
+                <td data-label="Sport">${bet.sport}</td>
+                <td data-label="Details">${bet.details}</td>
+                <td data-label="Stake">${formatCurrency(bet.stake)}</td>
+                <td data-label="Odds">${bet.odds.toFixed(2)}</td>
+                <td data-label="Result" class="status-cell">
                     <span class="status-badge ${statusClass}">${bet.result}</span>
                 </td>
-                <td class="${profitClass}">${formatCurrency(profit)}</td>
+                <td data-label="P/L" class="${profitClass}">${formatCurrency(profit)}</td>
                 <td class="action-cell">
                     <button class="action-btn edit-btn" data-id="${bet.id}"><i class="ph-fill ph-note-pencil"></i></button>
                     <button class="action-btn delete-btn" data-id="${bet.id}"><i class="ph-fill ph-trash"></i></button>
@@ -431,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (target) {
                     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
                     target.classList.add('active');
-                    updateUI();
+                    updateAllUI();
                 }
             });
         }
@@ -443,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
                     const customBtn = document.querySelector('.filter-btn[data-period="custom"]');
                     if (customBtn) customBtn.classList.add('active');
-                    updateUI();
+                    updateAllUI();
                 } else {
                     showNotification("Please select both start and end dates.", "error");
                 }
@@ -452,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sortSelector) {
             sortSelector.addEventListener('change', (e) => {
                 currentSortCriteria = e.target.value;
-                updateUI();
+                updateAllUI();
             });
         }
 
