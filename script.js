@@ -1,11 +1,33 @@
-document.addEventListener('DOMContentLoaded', () => {
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
+// --- PASTE YOUR FIREBASE CONFIG HERE ---
+// Replace this object with the one from your Firebase project settings
+const firebaseConfig = {
+    apiKey: "AIzaSyBZx5OLvFRE5m6_cbquG5BWs0TR64V6_40",
+    authDomain: "betlog-3bacf.firebaseapp.com",
+    projectId: "betlog-3bacf",
+    storageBucket: "betlog-3bacf.firebasestorage.app",
+    messagingSenderId: "598126173331",
+    appId: "1:598126173331:web:8c3cdeed2356fd69c14166"
+  };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE & CONFIG ---
-    let bets = JSON.parse(localStorage.getItem('bets')) || [];
+    let bets = []; // This will be populated by Firestore
     let profitChart = null;
-    let currentTheme = localStorage.getItem('theme') || 'dark'; // Default to dark theme
+    let currentTheme = localStorage.getItem('theme') || 'dark'; // Theme is UI-only, so localStorage is fine
     let currentCurrency = JSON.parse(localStorage.getItem('currency')) || { symbol: '₱', code: 'PHP' };
     let currentSortCriteria = 'date_desc';
+    let betsCollectionRef; // Will be set after user logs in
+    let unsubscribeFromBets; // To detach the Firestore listener
 
     const currencies = {
         'USD': { symbol: '$', code: 'USD' },
@@ -23,11 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationElement = document.getElementById('notification');
 
     // --- HELPER FUNCTIONS ---
-
-    /**
-     * Gets the current date in Manila (GMT+8) as a 'YYYY-MM-DD' string.
-     * @returns {string} The formatted date string.
-     */
     const getManilaDateString = () => {
         const now = new Date();
         const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -35,54 +52,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return manilaTime.toISOString().split('T')[0];
     };
 
-    /**
-     * Formats a number as currency.
-     * @param {number} amount The amount to format.
-     * @returns {string} The formatted currency string.
-     */
-    const formatCurrency = (amount) => {
-        return `${currentCurrency.symbol}${amount.toFixed(2)}`;
-    };
+    const formatCurrency = (amount) => `${currentCurrency.symbol}${amount.toFixed(2)}`;
 
-    /**
-     * Calculates the profit or loss for a given bet.
-     * @param {object} bet The bet object.
-     * @returns {number} The calculated profit or loss.
-     */
     const calculateProfitLoss = (bet) => {
         if (bet.result === 'Won') return (bet.stake * bet.odds) - bet.stake;
         if (bet.result === 'Lost') return -bet.stake;
-        return 0; // for 'Pending' or 'Void'
+        return 0;
     };
     
-    /**
-     * Shows a notification message.
-     * @param {string} message The message to display.
-     * @param {string} type 'success' or 'error'.
-     */
     const showNotification = (message, type = 'success') => {
         notificationMessage.textContent = message;
-        notificationElement.className = 'notification glass-card'; // Reset classes
+        notificationElement.className = 'notification glass-card';
         notificationElement.classList.add(type);
         notificationContainer.classList.add('show');
-        setTimeout(() => {
-            notificationContainer.classList.remove('show');
-        }, 3000);
+        setTimeout(() => notificationContainer.classList.remove('show'), 3000);
     };
 
     // --- THEME & CURRENCY ---
-
-    /**
-     * Applies the selected theme to the document.
-     * @param {string} theme The theme to apply ('light' or 'dark').
-     */
     const applyTheme = (theme) => {
         document.documentElement.setAttribute('data-theme', theme);
-        // If the theme is light, show the moon icon (to switch to dark), and vice-versa.
         const icon = theme === 'light' ? 'ph-fill ph-moon' : 'ph-fill ph-sun';
-        if (themeSwitcher) {
-            themeSwitcher.innerHTML = `<i class="${icon}"></i>`;
-        }
+        if (themeSwitcher) themeSwitcher.innerHTML = `<i class="${icon}"></i>`;
     };
 
     const initUniversalControls = () => {
@@ -92,25 +82,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTheme = currentTheme === 'light' ? 'dark' : 'light';
                 localStorage.setItem('theme', currentTheme);
                 applyTheme(currentTheme);
-                
-                // If the updateUI function exists (i.e., we're on the dashboard page), call it
-                // to re-render the chart with the new theme's colors.
-                if (typeof updateUI === 'function') {
-                    updateUI();
-                }
+                if (typeof updateUI === 'function') updateUI();
             });
         }
-
         if (currencySelector) {
             currencySelector.value = currentCurrency.code;
             currencySelector.addEventListener('change', (e) => {
                 currentCurrency = currencies[e.target.value];
                 localStorage.setItem('currency', JSON.stringify(currentCurrency));
-                if (typeof updateUI === 'function') {
-                    updateUI(); 
-                }
+                if (typeof updateUI === 'function') updateUI();
             });
         }
+    };
+
+    // --- FIREBASE AUTHENTICATION & DATA HANDLING ---
+    onAuthStateChanged(auth, user => {
+        if (user) {
+            // User is signed in.
+            console.log("User signed in with UID:", user.uid);
+            // Define the collection reference for this user's bets
+            betsCollectionRef = collection(db, "users", user.uid, "bets");
+            // Start listening for real-time updates
+            listenForBets();
+        } else {
+            // User is signed out. Sign in anonymously.
+            signInAnonymously(auth).catch(error => {
+                console.error("Anonymous sign-in failed:", error);
+                showNotification("Could not connect to the database.", "error");
+            });
+        }
+    });
+
+    const listenForBets = () => {
+        // Detach any previous listener
+        if (unsubscribeFromBets) unsubscribeFromBets();
+
+        // Create a query to get bets, ordered by date
+        const q = query(betsCollectionRef, orderBy("date", "desc"));
+
+        // onSnapshot listens for real-time changes
+        unsubscribeFromBets = onSnapshot(q, (snapshot) => {
+            bets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            
+            // If we are on the dashboard, update the UI
+            if (document.getElementById('profitChart')) {
+                updateUI();
+            }
+        }, error => {
+            console.error("Error fetching bets:", error);
+            showNotification("Error fetching your bets.", "error");
+        });
     };
 
     // --- PAGE-SPECIFIC LOGIC ---
@@ -119,14 +140,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('addBetForm')) {
         const addBetForm = document.getElementById('addBetForm');
         const betDateInput = document.getElementById('betDate');
-        
-        // Set default date to Manila time
         betDateInput.value = getManilaDateString();
 
-        addBetForm.addEventListener('submit', (e) => {
+        addBetForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!betsCollectionRef) {
+                showNotification("Not connected to database. Please refresh.", "error");
+                return;
+            }
             const newBet = {
-                id: Date.now(),
                 date: document.getElementById('betDate').value,
                 sport: document.getElementById('sport').value,
                 details: document.getElementById('betDetails').value,
@@ -135,85 +157,67 @@ document.addEventListener('DOMContentLoaded', () => {
                 result: document.getElementById('result').value,
                 notes: document.getElementById('notes').value,
             };
-            bets.unshift(newBet); // Add to the beginning of the array
-            localStorage.setItem('bets', JSON.stringify(bets));
-            
-            // Store a flag to show notification on the next page
-            localStorage.setItem('showBetLoggedNotification', 'true');
-            window.location.href = 'index.html';
+
+            try {
+                await addDoc(betsCollectionRef, newBet);
+                localStorage.setItem('showBetLoggedNotification', 'true');
+                window.location.href = 'index.html';
+            } catch (error) {
+                console.error("Error adding bet:", error);
+                showNotification("Failed to log bet.", "error");
+            }
         });
     } 
     // DASHBOARD PAGE
     else {
-        // --- DASHBOARD INITIALIZATION ---
         const filterButtons = document.querySelectorAll('.filter-btn');
         const customDateBtn = document.getElementById('customDateBtn');
         const sortSelector = document.getElementById('sortSelector');
 
-        // This function is only defined on the dashboard page
         const updateUI = () => {
             const activeFilter = document.querySelector('.filter-btn.active');
             const period = activeFilter ? activeFilter.dataset.period : 'all';
-            
             let customDates = {};
             if (period === 'custom') {
                  customDates.start = document.getElementById('startDate').value;
                  customDates.end = document.getElementById('endDate').value;
             }
-
             const filteredBets = filterBets(period, customDates);
             const sortedBets = sortBets(filteredBets, currentSortCriteria);
-
-            displayStats(filteredBets); // Stats should be based on filter, not sort
+            displayStats(filteredBets);
             displayBetList(sortedBets);
-            renderProfitChart(filteredBets); // Chart should be chronological, not sorted
+            renderProfitChart(filteredBets);
         };
 
-        // Check if we need to show a notification after adding a bet
         if (localStorage.getItem('showBetLoggedNotification') === 'true') {
             showNotification('Bet logged successfully!', 'success');
             localStorage.removeItem('showBetLoggedNotification');
         }
         
         const filterBets = (period, customDates = {}) => {
+            // This function now filters the global 'bets' array populated by Firestore
             const now = new Date();
             let startDate, endDate = new Date(now.setHours(23, 59, 59, 999));
-
             switch (period) {
-                case 'today':
-                    startDate = new Date(now.setHours(0, 0, 0, 0));
-                    break;
+                case 'today': startDate = new Date(now.setHours(0, 0, 0, 0)); break;
                 case 'yesterday':
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    startDate = new Date(yesterday.setHours(0, 0, 0, 0));
-                    endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+                    const y = new Date(); y.setDate(y.getDate() - 1);
+                    startDate = new Date(y.setHours(0, 0, 0, 0));
+                    endDate = new Date(y.setHours(23, 59, 59, 999));
                     break;
-                case '7d':
-                    startDate = new Date();
-                    startDate.setDate(now.getDate() - 6);
-                    startDate.setHours(0,0,0,0);
-                    break;
-                case 'month':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                    break;
-                case 'year':
-                    startDate = new Date(now.getFullYear(), 0, 1);
-                    break;
+                case '7d': startDate = new Date(); startDate.setDate(now.getDate() - 6); startDate.setHours(0,0,0,0); break;
+                case 'month': startDate = new Date(now.getFullYear(), now.getMonth(), 1); break;
+                case 'year': startDate = new Date(now.getFullYear(), 0, 1); break;
                 case 'custom':
                     if (!customDates.start || !customDates.end) return bets;
                     startDate = new Date(customDates.start);
                     endDate = new Date(customDates.end);
                     endDate.setHours(23, 59, 59, 999);
                     break;
-                case 'all':
-                default:
-                    return [...bets]; // Return a copy
+                default: return [...bets];
             }
-
             return bets.filter(bet => {
                 const betDate = new Date(bet.date);
-                // Adjust for timezone differences by comparing date parts only
                 const betUtc = Date.UTC(betDate.getFullYear(), betDate.getMonth(), betDate.getDate());
                 const startUtc = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
                 const endUtc = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
@@ -222,29 +226,15 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const sortBets = (betsToSort, criteria) => {
-            const sorted = [...betsToSort]; // Create a copy to sort
+            const sorted = [...betsToSort];
             const resultOrder = { 'Won': 1, 'Lost': 2, 'Pending': 3, 'Void': 4 };
-
             switch (criteria) {
-                case 'date_asc':
-                    sorted.sort((a, b) => new Date(a.date) - new Date(b.date));
-                    break;
-                case 'result':
-                    sorted.sort((a, b) => resultOrder[a.result] - resultOrder[b.result]);
-                    break;
-                case 'stake_desc':
-                    sorted.sort((a, b) => b.stake - a.stake);
-                    break;
-                case 'stake_asc':
-                    sorted.sort((a, b) => a.stake - b.stake);
-                    break;
-                case 'profit_desc':
-                    sorted.sort((a, b) => calculateProfitLoss(b) - calculateProfitLoss(a));
-                    break;
-                case 'date_desc':
-                default:
-                    sorted.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    break;
+                case 'date_asc': sorted.sort((a, b) => new Date(a.date) - new Date(b.date)); break;
+                case 'result': sorted.sort((a, b) => resultOrder[a.result] - resultOrder[b.result]); break;
+                case 'stake_desc': sorted.sort((a, b) => b.stake - a.stake); break;
+                case 'stake_asc': sorted.sort((a, b) => a.stake - b.stake); break;
+                case 'profit_desc': sorted.sort((a, b) => calculateProfitLoss(b) - calculateProfitLoss(a)); break;
+                default: sorted.sort((a, b) => new Date(b.date) - new Date(a.date)); break;
             }
             return sorted;
         };
@@ -273,7 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const betList = document.getElementById('betList');
             betList.innerHTML = '';
             if(sortedBets.length === 0){
-                betList.innerHTML = `<tr><td colspan="9" style="text-align:center;">No bets found.</td></tr>`;
+                betList.innerHTML = `<tr><td colspan="9" style="text-align:center;">No bets found. Log your first bet!</td></tr>`;
                 return;
             }
             sortedBets.forEach(bet => {
@@ -298,61 +288,23 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const renderProfitChart = (filteredBets) => {
-            const sortedForChart = [...filteredBets]
-                .filter(b => b.result !== 'Pending')
-                .sort((a, b) => new Date(a.date) - new Date(b.date));
-            
+            const sortedForChart = [...filteredBets].filter(b => b.result !== 'Pending').sort((a, b) => new Date(a.date) - new Date(b.date));
             const labels = [];
             const data = [];
             let cumulativeProfit = 0;
-
             sortedForChart.forEach(bet => {
                 labels.push(bet.date);
                 cumulativeProfit += calculateProfitLoss(bet);
                 data.push(cumulativeProfit);
             });
-
             const ctx = document.getElementById('profitChart').getContext('2d');
             const isDark = currentTheme === 'dark';
             const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
             const textColor = isDark ? '#e0e0e0' : '#333';
-
-            if (profitChart) {
-                profitChart.destroy();
-            }
+            if (profitChart) profitChart.destroy();
             profitChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Cumulative Profit',
-                        data: data,
-                        borderColor: '#e94560',
-                        backgroundColor: 'rgba(233, 69, 96, 0.2)',
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: '#e94560',
-                        pointBorderColor: '#fff',
-                        pointHoverRadius: 7,
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            ticks: { color: textColor, callback: (value) => formatCurrency(value) },
-                            grid: { color: gridColor }
-                        },
-                        x: {
-                            ticks: { color: textColor },
-                            grid: { color: gridColor }
-                        }
-                    },
-                    plugins: {
-                        legend: { labels: { color: textColor } }
-                    }
-                }
+                type: 'line', data: { labels, datasets: [{ label: 'Cumulative Profit', data, borderColor: '#e94560', backgroundColor: 'rgba(233, 69, 96, 0.2)', fill: true, tension: 0.4, pointBackgroundColor: '#e94560', pointBorderColor: '#fff', pointHoverRadius: 7 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { color: textColor, callback: (v) => formatCurrency(v) }, grid: { color: gridColor } }, x: { ticks: { color: textColor }, grid: { color: gridColor } } }, plugins: { legend: { labels: { color: textColor } } } }
             });
         };
 
@@ -364,13 +316,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateUI();
             });
         });
-
         customDateBtn.addEventListener('click', () => {
             const start = document.getElementById('startDate').value;
             const end = document.getElementById('endDate').value;
             if (start && end) {
                 filterButtons.forEach(btn => btn.classList.remove('active'));
-                // Create a dummy active button for custom logic
                 const dummy = document.createElement('button');
                 dummy.classList.add('active');
                 dummy.dataset.period = 'custom';
@@ -381,23 +331,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification("Please select both start and end dates.", "error");
             }
         });
-
         sortSelector.addEventListener('change', (e) => {
             currentSortCriteria = e.target.value;
             updateUI();
         });
-
-        document.getElementById('betTable').addEventListener('click', (e) => {
+        document.getElementById('betTable').addEventListener('click', async (e) => {
             const targetButton = e.target.closest('.action-btn');
             if (!targetButton) return;
-
-            const betId = parseInt(targetButton.dataset.id);
+            const betId = targetButton.dataset.id;
+            const betDocRef = doc(betsCollectionRef, betId);
             if (targetButton.classList.contains('delete-btn')) {
-                 if (confirm('Are you sure you want to delete this bet? This action cannot be undone.')) {
-                    bets = bets.filter(b => b.id !== betId);
-                    localStorage.setItem('bets', JSON.stringify(bets));
-                    updateUI();
-                    showNotification('Bet deleted successfully.', 'success');
+                if (confirm('Are you sure you want to delete this bet? This action cannot be undone.')) {
+                    try {
+                        await deleteDoc(betDocRef);
+                        showNotification('Bet deleted successfully.', 'success');
+                        // UI will update automatically via onSnapshot
+                    } catch (error) {
+                        showNotification('Failed to delete bet.', 'error');
+                        console.error("Delete error:", error);
+                    }
                 }
             }
             if (targetButton.classList.contains('edit-btn')) {
@@ -426,42 +378,35 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const closeEditModal = () => modal.classList.remove('show');
         closeBtn.onclick = closeEditModal;
-        window.onclick = (event) => {
-            if (event.target == modal) {
-                closeEditModal();
-            }
-        };
+        window.onclick = (event) => { if (event.target == modal) closeEditModal(); };
 
-        editForm.addEventListener('submit', (e) => {
+        editForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const betId = parseInt(document.getElementById('edit-id').value);
-            const betIndex = bets.findIndex(b => b.id === betId);
-            
-            if (betIndex !== -1) {
-                bets[betIndex] = {
-                    id: betId,
-                    date: document.getElementById('edit-date').value,
-                    sport: document.getElementById('edit-sport').value,
-                    details: document.getElementById('edit-details').value,
-                    stake: parseFloat(document.getElementById('edit-stake').value),
-                    odds: parseFloat(document.getElementById('edit-odds').value),
-                    result: document.getElementById('edit-result').value,
-                    notes: document.getElementById('edit-notes').value,
-                };
-                localStorage.setItem('bets', JSON.stringify(bets));
+            const betId = document.getElementById('edit-id').value;
+            const betDocRef = doc(betsCollectionRef, betId);
+            const updatedData = {
+                date: document.getElementById('edit-date').value,
+                sport: document.getElementById('edit-sport').value,
+                details: document.getElementById('edit-details').value,
+                stake: parseFloat(document.getElementById('edit-stake').value),
+                odds: parseFloat(document.getElementById('edit-odds').value),
+                result: document.getElementById('edit-result').value,
+                notes: document.getElementById('edit-notes').value,
+            };
+            try {
+                await updateDoc(betDocRef, updatedData);
                 closeEditModal();
-                updateUI();
                 showNotification('Bet updated successfully!', 'success');
+            } catch (error) {
+                showNotification('Failed to update bet.', 'error');
+                console.error("Update error:", error);
             }
         });
 
         // --- IMPORT/EXPORT LOGIC ---
         document.getElementById('exportBtn').addEventListener('click', () => {
-            if(bets.length === 0) {
-                showNotification('No bets to export.', 'error');
-                return;
-            }
-            const worksheet = XLSX.utils.json_to_sheet(bets);
+            if(bets.length === 0) { showNotification('No bets to export.', 'error'); return; }
+            const worksheet = XLSX.utils.json_to_sheet(bets.map(({id, ...rest}) => rest)); // Exclude Firestore ID
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Bets");
             XLSX.writeFile(workbook, "BetTracker_Export.xlsx");
@@ -475,36 +420,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const data = new Uint8Array(event.target.result);
                     const workbook = XLSX.read(data, {type: 'array'});
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const json = XLSX.utils.sheet_to_json(worksheet);
-
-                    const validNewBets = json.filter(item => 
-                        item.date && item.stake != null && item.odds != null && item.result
-                    ).map(item => ({...item, id: Date.now() + Math.random() })); // Add unique IDs
-
-                    if (validNewBets.length === 0) {
-                        showNotification('No valid bets found in the file.', 'error');
-                        return;
-                    }
-
+                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    const validNewBets = json.filter(i => i.date && i.stake != null && i.odds != null && i.result);
+                    if (validNewBets.length === 0) { showNotification('No valid bets found in the file.', 'error'); return; }
                     if (confirm(`This will add ${validNewBets.length} new bets from the file. Continue?`)) {
-                        bets = [...validNewBets, ...bets]; // Prepend new bets
-                        localStorage.setItem('bets', JSON.stringify(bets));
-                        updateUI();
-                        showNotification(`${validNewBets.length} bets imported successfully.`, 'success');
+                        const promises = validNewBets.map(bet => addDoc(betsCollectionRef, bet));
+                        Promise.all(promises).then(() => {
+                            showNotification(`${validNewBets.length} bets imported successfully.`, 'success');
+                        }).catch(err => {
+                             showNotification(`Error importing bets.`, 'error');
+                             console.error(err);
+                        });
                     }
                 } catch (error) {
-                    showNotification('Failed to read the file. Please ensure it is a valid Excel file.', 'error');
+                    showNotification('Failed to read the file.', 'error');
                     console.error("Import error:", error);
                 }
             };
             reader.readAsArrayBuffer(file);
-            e.target.value = ''; // Reset file input
+            e.target.value = '';
         });
-
-        // --- INITIAL LOAD ---
-        updateUI();
     }
     
     // Run universal setup on all pages
