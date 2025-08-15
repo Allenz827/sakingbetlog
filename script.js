@@ -1,34 +1,36 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+// Import the functions you need from the Firebase SDKs
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-// --- PASTE YOUR FIREBASE CONFIG HERE ---
-// Replace this object with the one from your Firebase project settings
-const firebaseConfig = {
-    apiKey: "AIzaSyBZx5OLvFRE5m6_cbquG5BWs0TR64V6_40",
-    authDomain: "betlog-3bacf.firebaseapp.com",
-    projectId: "betlog-3bacf",
-    storageBucket: "betlog-3bacf.firebasestorage.app",
-    messagingSenderId: "598126173331",
-    appId: "1:598126173331:web:8c3cdeed2356fd69c14166"
-  };
+// Global variables from the Canvas environment
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+let app, db, auth;
+try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+} catch (error) {
+    console.error("Firebase initialization failed:", error);
+    // showNotification("Failed to initialize Firebase. Check your configuration.", "error");
+}
+
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE & CONFIG ---
     let bets = []; // This will be populated by Firestore
     let profitChart = null;
-    let currentTheme = localStorage.getItem('theme') || 'dark'; // Theme is UI-only, so localStorage is fine
+    let currentTheme = localStorage.getItem('theme') || 'dark';
     let currentCurrency = JSON.parse(localStorage.getItem('currency')) || { symbol: '₱', code: 'PHP' };
     let currentSortCriteria = 'date_desc';
-    let betsCollectionRef; // Will be set after user logs in
-    let unsubscribeFromBets; // To detach the Firestore listener
-    let isDbReady = false; // Flag to check if Firestore is ready
+    let betsCollectionRef;
+    let unsubscribeFromBets;
+    let isDbReady = false;
+    let userId = null;
 
     const currencies = {
         'USD': { symbol: '$', code: 'USD' },
@@ -44,7 +46,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationContainer = document.getElementById('notification-container');
     const notificationMessage = document.getElementById('notification-message');
     const notificationElement = document.getElementById('notification');
-    const loadingOverlay = document.getElementById('loadingOverlay'); // For loading state
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const confirmModal = document.getElementById('confirmModal');
+    const confirmMessage = document.getElementById('confirmMessage');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
 
     // --- HELPER FUNCTIONS ---
     const getManilaDateString = () => {
@@ -104,31 +110,60 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- FIREBASE AUTHENTICATION & DATA HANDLING ---
-    onAuthStateChanged(auth, user => {
+    onAuthStateChanged(auth, async (user) => {
         if (user) {
             console.log("User signed in with UID:", user.uid);
-            betsCollectionRef = collection(db, "users", user.uid, "bets");
+            userId = user.uid;
+            // The collection path MUST include the app ID and user ID for proper security rules
+            const collectionPath = `/artifacts/${appId}/users/${userId}/bets`;
+            betsCollectionRef = collection(db, collectionPath);
             isDbReady = true;
             setLoading(false); // Hide loading overlay
             listenForBets();
+            if (document.getElementById('userIdDisplay')) {
+                document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
+            }
         } else {
-            signInAnonymously(auth).catch(error => {
-                console.error("Anonymous sign-in failed:", error);
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Authentication failed:", error);
                 showNotification("Could not connect to the database.", "error");
                 setLoading(false);
-            });
+            }
         }
     });
 
     const listenForBets = () => {
         if (unsubscribeFromBets) unsubscribeFromBets();
         
-        const q = query(betsCollectionRef, orderBy("date", "desc"));
-
-        unsubscribeFromBets = onSnapshot(q, (snapshot) => {
+        // Removed orderBy from the query to prevent potential index errors.
+        // Sorting will now be handled client-side.
+        unsubscribeFromBets = onSnapshot(betsCollectionRef, (snapshot) => {
+            // Fetch all bets
             bets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            
+            // Sort bets client-side based on the current sort criteria
+            const sortedBets = sortBets(bets, currentSortCriteria);
+            
             if (document.getElementById('profitChart')) {
-                updateUI();
+                // If on the dashboard page, update the UI with the newly sorted bets
+                const filterButtons = document.querySelectorAll('.filter-btn');
+                const activeFilter = document.querySelector('.filter-btn.active');
+                const period = activeFilter ? activeFilter.dataset.period : 'all';
+                let customDates = {};
+                if (period === 'custom') {
+                    customDates.start = document.getElementById('startDate').value;
+                    customDates.end = document.getElementById('endDate').value;
+                }
+                const filteredBets = filterBets(bets, period, customDates);
+                displayStats(filteredBets);
+                displayBetList(sortBets(filteredBets, currentSortCriteria));
+                renderProfitChart(filteredBets);
             }
         }, error => {
             console.error("Error fetching bets:", error);
@@ -159,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 result: document.getElementById('result').value,
                 notes: document.getElementById('notes').value,
             };
-
             try {
                 await addDoc(betsCollectionRef, newBet);
                 localStorage.setItem('showBetLoggedNotification', 'true');
@@ -169,313 +203,403 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification("Failed to log bet.", "error");
             }
         });
-    } 
+    }
+
     // DASHBOARD PAGE
-    else {
-        const filterButtons = document.querySelectorAll('.filter-btn');
+    const updateUI = () => {
+        const activeFilter = document.querySelector('.filter-btn.active');
+        const period = activeFilter ? activeFilter.dataset.period : 'all';
+        let customDates = {};
+        if (period === 'custom') {
+            customDates.start = document.getElementById('startDate').value;
+            customDates.end = document.getElementById('endDate').value;
+        }
+        const filteredBets = filterBets(bets, period, customDates);
+        const sortedBets = sortBets(filteredBets, currentSortCriteria);
+        displayStats(filteredBets);
+        displayBetList(sortedBets);
+        renderProfitChart(filteredBets);
+    };
+
+    const displayStats = (filteredBets) => {
+        // Your existing displayStats logic
+        if (!document.getElementById('netProfit')) return;
+
+        const totalStake = filteredBets.reduce((sum, bet) => sum + bet.stake, 0);
+        const totalProfit = filteredBets.reduce((sum, bet) => sum + calculateProfitLoss(bet), 0);
+        const wonBets = filteredBets.filter(bet => bet.result === 'Won').length;
+        const totalBets = filteredBets.filter(bet => bet.result !== 'Pending').length;
+        const roi = totalStake > 0 ? (totalProfit / totalStake) * 100 : 0;
+        const accuracy = totalBets > 0 ? (wonBets / totalBets) * 100 : 0;
+
+        document.getElementById('netProfit').textContent = formatCurrency(totalProfit);
+        document.getElementById('turnover').textContent = formatCurrency(totalStake);
+        document.getElementById('roi').textContent = `${roi.toFixed(2)}%`;
+        document.getElementById('accuracy').textContent = `${accuracy.toFixed(2)}%`;
+        document.getElementById('totalBets').textContent = filteredBets.length;
+        document.getElementById('wonBets').textContent = wonBets;
+        document.getElementById('lostBets').textContent = filteredBets.filter(bet => bet.result === 'Lost').length;
+        document.getElementById('pendingBets').textContent = filteredBets.filter(bet => bet.result === 'Pending').length;
+
+        // Apply color based on net profit
+        const netProfitElement = document.getElementById('netProfit');
+        netProfitElement.classList.toggle('positive', totalProfit >= 0);
+        netProfitElement.classList.toggle('negative', totalProfit < 0);
+    };
+
+    const renderProfitChart = (filteredBets) => {
+        const ctx = document.getElementById('profitChart');
+        if (!ctx) return;
+
+        // Your existing chart logic
+        if (profitChart) profitChart.destroy();
+
+        const dailyProfits = filteredBets.reduce((acc, bet) => {
+            const date = bet.date;
+            const profit = calculateProfitLoss(bet);
+            acc[date] = (acc[date] || 0) + profit;
+            return acc;
+        }, {});
+
+        const sortedDates = Object.keys(dailyProfits).sort();
+        const cumulativeProfits = sortedDates.reduce((acc, date) => {
+            const lastTotal = acc.length > 0 ? acc[acc.length - 1] : 0;
+            acc.push(lastTotal + dailyProfits[date]);
+            return acc;
+        }, []);
+
+        const chartData = {
+            labels: sortedDates,
+            datasets: [{
+                label: 'Cumulative Profit/Loss',
+                data: cumulativeProfits,
+                borderColor: currentTheme === 'dark' ? '#39ff14' : '#3d52a0',
+                backgroundColor: 'rgba(57, 255, 20, 0.2)',
+                tension: 0.4,
+                fill: true,
+            }]
+        };
+
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    grid: {
+                        color: currentTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                    },
+                    ticks: { color: currentTheme === 'dark' ? '#e0e0e0' : '#0d1117' }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: currentTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                    },
+                    ticks: { color: currentTheme === 'dark' ? '#e0e0e0' : '#0d1117' }
+                }
+            },
+            plugins: {
+                legend: {
+                    labels: { color: currentTheme === 'dark' ? '#e0e0e0' : '#0d1117' }
+                }
+            }
+        };
+
+        profitChart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: chartOptions
+        });
+    };
+
+    const filterBets = (betsArray, period, customDates) => {
+        const now = new Date();
+        let startDate, endDate = new Date(now.setHours(23, 59, 59, 999));
+        
+        switch (period) {
+            case 'today':
+                startDate = new Date(now.setHours(0, 0, 0, 0));
+                break;
+            case 'yesterday':
+                const y = new Date();
+                y.setDate(y.getDate() - 1);
+                startDate = new Date(y.setHours(0, 0, 0, 0));
+                endDate = new Date(y.setHours(23, 59, 59, 999));
+                break;
+            case '7d':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 7);
+                startDate.setHours(0, 0, 0, 0);
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+                break;
+            case 'year':
+                startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
+                break;
+            case 'custom':
+                startDate = new Date(customDates.start);
+                endDate = new Date(customDates.end);
+                break;
+            case 'all':
+            default:
+                return betsArray;
+        }
+
+        return betsArray.filter(bet => {
+            const betDate = new Date(bet.date);
+            return betDate >= startDate && betDate <= endDate;
+        });
+    };
+
+    const sortBets = (betsArray, criteria) => {
+        // Sorts the array in memory
+        return [...betsArray].sort((a, b) => {
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+
+            switch (criteria) {
+                case 'date_desc':
+                    return dateB - dateA;
+                case 'date_asc':
+                    return dateA - dateB;
+                case 'stake_desc':
+                    return b.stake - a.stake;
+                case 'stake_asc':
+                    return a.stake - b.stake;
+                case 'odds_desc':
+                    return b.odds - a.odds;
+                case 'odds_asc':
+                    return a.odds - b.odds;
+                default:
+                    return 0;
+            }
+        });
+    };
+    
+    const displayBetList = (sortedBets) => {
+        const betList = document.getElementById('betList');
+        if (!betList) return;
+        betList.innerHTML = '';
+        if (sortedBets.length === 0) {
+            betList.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No bets found for this period.</td></tr>';
+            return;
+        }
+
+        sortedBets.forEach(bet => {
+            const row = document.createElement('tr');
+            row.className = 'fade-in';
+            const profit = calculateProfitLoss(bet);
+            const profitClass = profit > 0 ? 'positive' : profit < 0 ? 'negative' : 'pending-color';
+            const statusClass = bet.result.toLowerCase();
+
+            row.innerHTML = `
+                <td>${bet.date}</td>
+                <td>${bet.sport}</td>
+                <td>${bet.details}</td>
+                <td>${formatCurrency(bet.stake)}</td>
+                <td>${bet.odds.toFixed(2)}</td>
+                <td class="status-cell">
+                    <span class="status-badge ${statusClass}">${bet.result}</span>
+                </td>
+                <td class="${profitClass}">${formatCurrency(profit)}</td>
+                <td class="action-cell">
+                    <button class="action-btn edit-btn" data-id="${bet.id}"><i class="ph-fill ph-note-pencil"></i></button>
+                    <button class="action-btn delete-btn" data-id="${bet.id}"><i class="ph-fill ph-trash"></i></button>
+                </td>
+            `;
+            betList.appendChild(row);
+        });
+    };
+    
+    const setupEventListeners = () => {
+        const betList = document.getElementById('betList');
+        const filterControls = document.querySelector('.filter-controls');
         const customDateBtn = document.getElementById('customDateBtn');
         const sortSelector = document.getElementById('sortSelector');
+        const closeEditModal = document.getElementById('closeEditModal');
+        const editModal = document.getElementById('editModal');
+        const editForm = document.getElementById('editBetForm');
+        const importFile = document.getElementById('importFile');
+        const closeConfirmModal = document.getElementById('closeConfirmModal');
+        const confirmBtn = document.getElementById('confirmBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
 
-        const updateUI = () => {
-            const activeFilter = document.querySelector('.filter-btn.active');
-            const period = activeFilter ? activeFilter.dataset.period : 'all';
-            let customDates = {};
-            if (period === 'custom') {
-                 customDates.start = document.getElementById('startDate').value;
-                 customDates.end = document.getElementById('endDate').value;
-            }
-            const filteredBets = filterBets(period, customDates);
-            const sortedBets = sortBets(filteredBets, currentSortCriteria);
-            displayStats(filteredBets);
-            displayBetList(sortedBets);
-            renderProfitChart(filteredBets);
-        };
+        if (filterControls) {
+            filterControls.addEventListener('click', (e) => {
+                const target = e.target.closest('.filter-btn');
+                if (target) {
+                    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+                    target.classList.add('active');
+                    updateUI();
+                }
+            });
+        }
+        if (customDateBtn) {
+            customDateBtn.addEventListener('click', () => {
+                const start = document.getElementById('startDate').value;
+                const end = document.getElementById('endDate').value;
+                if (start && end) {
+                    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+                    const customBtn = document.querySelector('.filter-btn[data-period="custom"]');
+                    if (customBtn) customBtn.classList.add('active');
+                    updateUI();
+                } else {
+                    showNotification("Please select both start and end dates.", "error");
+                }
+            });
+        }
+        if (sortSelector) {
+            sortSelector.addEventListener('change', (e) => {
+                currentSortCriteria = e.target.value;
+                updateUI();
+            });
+        }
 
-        if (localStorage.getItem('showBetLoggedNotification') === 'true') {
-            showNotification('Bet logged successfully!', 'success');
-            localStorage.removeItem('showBetLoggedNotification');
+        if (betList) {
+            betList.addEventListener('click', async (e) => {
+                const target = e.target.closest('.action-btn');
+                if (!target) return;
+                const betId = target.dataset.id;
+                
+                if (target.classList.contains('delete-btn')) {
+                    // Use custom modal for confirmation
+                    showConfirmModal('Are you sure you want to delete this bet?', async () => {
+                        try {
+                            const betDocRef = doc(db, `/artifacts/${appId}/users/${userId}/bets`, betId);
+                            await deleteDoc(betDocRef);
+                            showNotification('Bet deleted successfully.', 'success');
+                        } catch (error) {
+                            console.error("Error deleting document:", error);
+                            showNotification('Failed to delete bet.', 'error');
+                        }
+                    });
+                } else if (target.classList.contains('edit-btn')) {
+                    const bet = bets.find(b => b.id === betId);
+                    if (bet) {
+                        document.getElementById('edit-date').value = bet.date;
+                        document.getElementById('edit-sport').value = bet.sport;
+                        document.getElementById('edit-details').value = bet.details;
+                        document.getElementById('edit-stake').value = bet.stake;
+                        document.getElementById('edit-odds').value = bet.odds;
+                        document.getElementById('edit-result').value = bet.result;
+                        document.getElementById('edit-notes').value = bet.notes;
+                        document.getElementById('edit-id').value = bet.id;
+                        editModal.style.display = 'flex';
+                    }
+                }
+            });
+        }
+        if (closeEditModal) closeEditModal.addEventListener('click', () => { editModal.style.display = 'none'; });
+        if (editForm) {
+            editForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const betId = document.getElementById('edit-id').value;
+                const updatedBet = {
+                    date: document.getElementById('edit-date').value,
+                    sport: document.getElementById('edit-sport').value,
+                    details: document.getElementById('edit-details').value,
+                    stake: parseFloat(document.getElementById('edit-stake').value),
+                    odds: parseFloat(document.getElementById('edit-odds').value),
+                    result: document.getElementById('edit-result').value,
+                    notes: document.getElementById('edit-notes').value,
+                };
+                try {
+                    const betDocRef = doc(db, `/artifacts/${appId}/users/${userId}/bets`, betId);
+                    await updateDoc(betDocRef, updatedBet);
+                    editModal.style.display = 'none';
+                    showNotification('Bet updated successfully.', 'success');
+                } catch (error) {
+                    console.error("Error updating document:", error);
+                    showNotification('Failed to update bet.', 'error');
+                }
+            });
         }
         
-        const filterBets = (period, customDates = {}) => {
-            const now = new Date();
-            let startDate, endDate = new Date(now.setHours(23, 59, 59, 999));
-            switch (period) {
-                case 'today': startDate = new Date(now.setHours(0, 0, 0, 0)); break;
-                case 'yesterday':
-                    const y = new Date(); y.setDate(y.getDate() - 1);
-                    startDate = new Date(y.setHours(0, 0, 0, 0));
-                    endDate = new Date(y.setHours(23, 59, 59, 999));
-                    break;
-                case '7d': startDate = new Date(); startDate.setDate(now.getDate() - 6); startDate.setHours(0,0,0,0); break;
-                case 'month': startDate = new Date(now.getFullYear(), now.getMonth(), 1); break;
-                case 'year': startDate = new Date(now.getFullYear(), 0, 1); break;
-                case 'custom':
-                    if (!customDates.start || !customDates.end) return bets;
-                    startDate = new Date(customDates.start);
-                    endDate = new Date(customDates.end);
-                    endDate.setHours(23, 59, 59, 999);
-                    break;
-                default: return [...bets];
-            }
-            return bets.filter(bet => {
-                const betDate = new Date(bet.date);
-                const betUtc = Date.UTC(betDate.getFullYear(), betDate.getMonth(), betDate.getDate());
-                const startUtc = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-                const endUtc = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-                return betUtc >= startUtc && betUtc <= endUtc;
-            });
-        };
+        if (importFile) {
+            importFile.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
 
-        const sortBets = (betsToSort, criteria) => {
-            const sorted = [...betsToSort];
-            const resultOrder = { 'Won': 1, 'Lost': 2, 'Pending': 3, 'Void': 4 };
-            switch (criteria) {
-                case 'date_asc': sorted.sort((a, b) => new Date(a.date) - new Date(b.date)); break;
-                case 'result': sorted.sort((a, b) => resultOrder[a.result] - resultOrder[b.result]); break;
-                case 'stake_desc': sorted.sort((a, b) => b.stake - a.stake); break;
-                case 'stake_asc': sorted.sort((a, b) => a.stake - b.stake); break;
-                case 'profit_desc': sorted.sort((a, b) => calculateProfitLoss(b) - calculateProfitLoss(a)); break;
-                default: sorted.sort((a, b) => new Date(b.date) - new Date(a.date)); break;
-            }
-            return sorted;
-        };
-
-        const displayStats = (filteredBets) => {
-            const settledBets = filteredBets.filter(b => b.result === 'Won' || b.result === 'Lost');
-            const turnover = filteredBets.reduce((sum, bet) => sum + bet.stake, 0);
-            const netProfit = filteredBets.reduce((sum, bet) => sum + calculateProfitLoss(bet), 0);
-            const settledTurnover = settledBets.reduce((sum, bet) => sum + bet.stake, 0);
-            const roi = settledTurnover > 0 ? (netProfit / settledTurnover) * 100 : 0;
-            const wins = settledBets.filter(b => b.result === 'Won').length;
-            const accuracy = settledBets.length > 0 ? (wins / settledBets.length) * 100 : 0;
-            const totalBets = filteredBets.length;
-            const avgStake = totalBets > 0 ? turnover / totalBets : 0;
-
-            document.getElementById('netProfit').textContent = formatCurrency(netProfit);
-            document.getElementById('netProfit').className = netProfit >= 0 ? 'positive' : 'negative';
-            document.getElementById('turnover').textContent = formatCurrency(turnover);
-            document.getElementById('roi').textContent = `${roi.toFixed(2)}%`;
-            document.getElementById('accuracy').textContent = `${accuracy.toFixed(2)}%`;
-            document.getElementById('totalBets').textContent = totalBets;
-            document.getElementById('avgStake').textContent = formatCurrency(avgStake);
-        };
-        
-        const displayBetList = (sortedBets) => {
-            const betList = document.getElementById('betList');
-            betList.innerHTML = '';
-            if(sortedBets.length === 0 && isDbReady){
-                betList.innerHTML = `<tr><td colspan="9" style="text-align:center;">No bets found. Log your first bet!</td></tr>`;
-                return;
-            }
-            sortedBets.forEach(bet => {
-                const profit = calculateProfitLoss(bet);
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td data-label="Date">${bet.date}</td>
-                    <td data-label="Sport">${bet.sport}</td>
-                    <td data-label="Details">${bet.details}</td>
-                    <td data-label="Stake">${formatCurrency(bet.stake)}</td>
-                    <td data-label="Odds">${bet.odds.toFixed(2)}</td>
-                    <td data-label="Result" class="result-${bet.result.toLowerCase()}">${bet.result}</td>
-                    <td data-label="P/L" class="${profit > 0 ? 'positive' : profit < 0 ? 'negative' : ''}">${formatCurrency(profit)}</td>
-                    <td data-label="Notes">${bet.notes || '–'}</td>
-                    <td data-label="Actions">
-                        <button class="action-btn edit-btn" data-id="${bet.id}"><i class="ph-fill ph-pencil-simple"></i></button>
-                        <button class="action-btn delete-btn" data-id="${bet.id}"><i class="ph-fill ph-trash"></i></button>
-                    </td>
-                `;
-                betList.appendChild(row);
-            });
-        };
-
-        const renderProfitChart = (filteredBets) => {
-            const sortedForChart = [...filteredBets].filter(b => b.result !== 'Pending').sort((a, b) => new Date(a.date) - new Date(b.date));
-            const labels = [];
-            const data = [];
-            let cumulativeProfit = 0;
-            sortedForChart.forEach(bet => {
-                labels.push(bet.date);
-                cumulativeProfit += calculateProfitLoss(bet);
-                data.push(cumulativeProfit);
-            });
-            const ctx = document.getElementById('profitChart').getContext('2d');
-            const isDark = currentTheme === 'dark';
-            const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-            const textColor = isDark ? '#e0e0e0' : '#333';
-            if (profitChart) profitChart.destroy();
-            profitChart = new Chart(ctx, {
-                type: 'line', data: { labels, datasets: [{ label: 'Cumulative Profit', data, borderColor: '#e94560', backgroundColor: 'rgba(233, 69, 96, 0.2)', fill: true, tension: 0.4, pointBackgroundColor: '#e94560', pointBorderColor: '#fff', pointHoverRadius: 7 }] },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { color: textColor, callback: (v) => formatCurrency(v) }, grid: { color: gridColor } }, x: { ticks: { color: textColor }, grid: { color: gridColor } } }, plugins: { legend: { labels: { color: textColor } } } }
-            });
-        };
-
-        // --- EVENT LISTENERS ---
-        filterButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                filterButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                updateUI();
-            });
-        });
-        customDateBtn.addEventListener('click', () => {
-            const start = document.getElementById('startDate').value;
-            const end = document.getElementById('endDate').value;
-            if (start && end) {
-                filterButtons.forEach(btn => btn.classList.remove('active'));
-                const dummy = document.createElement('button');
-                dummy.classList.add('active');
-                dummy.dataset.period = 'custom';
-                customDateBtn.parentNode.appendChild(dummy);
-                updateUI();
-                dummy.remove();
-            } else {
-                showNotification("Please select both start and end dates.", "error");
-            }
-        });
-        sortSelector.addEventListener('change', (e) => {
-            currentSortCriteria = e.target.value;
-            updateUI();
-        });
-        document.getElementById('betTable').addEventListener('click', async (e) => {
-            const targetButton = e.target.closest('.action-btn');
-            if (!targetButton) return;
-            const betId = targetButton.dataset.id;
-            const betDocRef = doc(betsCollectionRef, betId);
-            if (targetButton.classList.contains('delete-btn')) {
-                if (confirm('Are you sure you want to delete this bet? This action cannot be undone.')) {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
                     try {
-                        await deleteDoc(betDocRef);
-                        showNotification('Bet deleted successfully.', 'success');
-                    } catch (error) {
-                        showNotification('Failed to delete bet.', 'error');
-                        console.error("Delete error:", error);
-                    }
-                }
-            }
-            if (targetButton.classList.contains('edit-btn')) {
-                openEditModal(betId);
-            }
-        });
-        
-        // --- MODAL LOGIC ---
-        const modal = document.getElementById('editModal');
-        const closeBtn = modal.querySelector('.close-button');
-        const editForm = document.getElementById('editForm');
-        
-        const openEditModal = (betId) => {
-            const bet = bets.find(b => b.id === betId);
-            if (!bet) return;
-            document.getElementById('edit-id').value = bet.id;
-            document.getElementById('edit-date').value = bet.date;
-            document.getElementById('edit-sport').value = bet.sport;
-            document.getElementById('edit-details').value = bet.details;
-            document.getElementById('edit-stake').value = bet.stake;
-            document.getElementById('edit-odds').value = bet.odds;
-            document.getElementById('edit-result').value = bet.result;
-            document.getElementById('edit-notes').value = bet.notes;
-            modal.classList.add('show');
-        };
-        
-        const closeEditModal = () => modal.classList.remove('show');
-        closeBtn.onclick = closeEditModal;
-        window.onclick = (event) => { if (event.target == modal) closeEditModal(); };
+                        const data = new Uint8Array(event.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const json = XLSX.utils.sheet_to_json(worksheet);
 
-        editForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const betId = document.getElementById('edit-id').value;
-            const betDocRef = doc(betsCollectionRef, betId);
-            const updatedData = {
-                date: document.getElementById('edit-date').value,
-                sport: document.getElementById('edit-sport').value,
-                details: document.getElementById('edit-details').value,
-                stake: parseFloat(document.getElementById('edit-stake').value),
-                odds: parseFloat(document.getElementById('edit-odds').value),
-                result: document.getElementById('edit-result').value,
-                notes: document.getElementById('edit-notes').value,
-            };
-            try {
-                await updateDoc(betDocRef, updatedData);
-                closeEditModal();
-                showNotification('Bet updated successfully!', 'success');
-            } catch (error) {
-                showNotification('Failed to update bet.', 'error');
-                console.error("Update error:", error);
-            }
-        });
-
-        // --- IMPORT/EXPORT LOGIC ---
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            if(bets.length === 0) { showNotification('No bets to export.', 'error'); return; }
-            const worksheet = XLSX.utils.json_to_sheet(bets.map(({id, ...rest}) => rest));
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Bets");
-            XLSX.writeFile(workbook, "BetTracker_Export.xlsx");
-        });
-
-        document.getElementById('importFile').addEventListener('change', (e) => {
-            if (!isDbReady) {
-                showNotification("Database not ready. Please wait a moment and try again.", "error");
-                e.target.value = '';
-                return;
-            }
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const data = new Uint8Array(event.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { cellDates: true });
-
-                    const validNewBets = json
-                        .filter(i => (i.date instanceof Date || typeof i.date === 'string') && i.stake != null && i.odds != null && i.result)
-                        .map(bet => {
-                            let formattedDate;
-                            if (bet.date instanceof Date) {
-                                const date = new Date(bet.date);
-                                const tzoffset = date.getTimezoneOffset() * 60000;
-                                formattedDate = (new Date(date - tzoffset)).toISOString().split('T')[0];
-                            } else {
-                                // Assumes the string is already in 'YYYY-MM-DD' format
-                                formattedDate = bet.date;
+                        const validNewBets = json.map(bet => {
+                            // Validate and normalize bet data from Excel
+                            if (!bet.date || !bet.sport || !bet.details || bet.stake === undefined || bet.odds === undefined) {
+                                return null;
                             }
-                            
-                            // Remove the old 'id' property if it exists from localStorage export
-                            const { id, ...restOfBet } = bet;
-
-                            return { 
-                                ...restOfBet, 
-                                date: formattedDate, 
-                                stake: parseFloat(bet.stake), 
-                                odds: parseFloat(bet.odds) 
+                            return {
+                                date: bet.date.toISOString().split('T')[0], // Assuming date is a Date object from XLSX
+                                sport: bet.sport.toString(),
+                                details: bet.details.toString(),
+                                stake: parseFloat(bet.stake),
+                                odds: parseFloat(bet.odds)
                             };
-                        });
+                        }).filter(bet => bet !== null);
 
-                    if (validNewBets.length === 0) {
-                        showNotification('No valid bets found in the file. Check date format and required fields.', 'error');
-                        return;
-                    }
+                        if (validNewBets.length === 0) {
+                            showNotification('No valid bets found in the file. Check date format and required fields.', 'error');
+                            return;
+                        }
 
-                    if (confirm(`This will add ${validNewBets.length} new bets from the file. Continue?`)) {
-                        const promises = validNewBets.map(bet => addDoc(betsCollectionRef, bet));
-                        Promise.all(promises).then(() => {
-                            showNotification(`${validNewBets.length} bets imported successfully.`, 'success');
-                        }).catch(err => {
-                             showNotification(`Error importing bets.`, 'error');
-                             console.error(err);
+                        // Use custom modal for import confirmation
+                        showConfirmModal(`This will add ${validNewBets.length} new bets from the file. Continue?`, async () => {
+                             const promises = validNewBets.map(bet => addDoc(betsCollectionRef, bet));
+                             try {
+                                 await Promise.all(promises);
+                                 showNotification(`${validNewBets.length} bets imported successfully.`, 'success');
+                             } catch (err) {
+                                showNotification(`Error importing bets.`, 'error');
+                                console.error(err);
+                             }
                         });
+                    } catch (error) {
+                        showNotification('Failed to read the file. Please ensure it is a valid Excel file.', 'error');
+                        console.error("Import error:", error);
                     }
-                } catch (error) {
-                    showNotification('Failed to read the file. Please ensure it is a valid Excel file.', 'error');
-                    console.error("Import error:", error);
-                }
+                };
+                reader.readAsArrayBuffer(file);
+                e.target.value = '';
+            });
+        }
+
+        // Custom modal for confirmation
+        function showConfirmModal(message, onConfirm) {
+            confirmMessage.textContent = message;
+            confirmModal.style.display = 'flex';
+            
+            const handleConfirm = () => {
+                onConfirm();
+                confirmModal.style.display = 'none';
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
             };
-            reader.readAsArrayBuffer(file);
-            e.target.value = '';
-        });
-    }
+
+            const handleCancel = () => {
+                confirmModal.style.display = 'none';
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+            closeConfirmModal.addEventListener('click', handleCancel);
+        }
+    };
     
     // Run universal setup on all pages
     setLoading(true); // Show loading on initial load
     initUniversalControls();
+    
+    // Check if on dashboard page and if so, set up event listeners.
+    if (document.getElementById('betList')) {
+        setupEventListeners();
+    }
 });
