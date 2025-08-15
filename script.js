@@ -17,6 +17,7 @@ try {
 } catch (error) {
     console.error("Firebase initialization failed:", error);
     showNotification("Failed to initialize Firebase. Check your configuration.", "error");
+    // Ensure loading is turned off even if initialization fails
     setLoading(false);
 }
 
@@ -112,30 +113,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FIREBASE AUTHENTICATION & DATA HANDLING ---
     onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            console.log("User signed in with UID:", user.uid);
-            userId = user.uid;
-            // The collection path MUST include the app ID and user ID for proper security rules
-            const collectionPath = `/artifacts/${appId}/users/${userId}/bets`;
-            betsCollectionRef = collection(db, collectionPath);
-            isDbReady = true;
-            setLoading(false); // Hide loading overlay
-            listenForBets();
-            if (document.getElementById('userIdDisplay')) {
-                document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
-            }
-        } else {
-            try {
+        try {
+            if (user) {
+                console.log("User signed in with UID:", user.uid);
+                userId = user.uid;
+                // The collection path MUST include the app ID and user ID for proper security rules
+                const collectionPath = `/artifacts/${appId}/users/${userId}/bets`;
+                betsCollectionRef = collection(db, collectionPath);
+                isDbReady = true;
+                listenForBets();
+                if (document.getElementById('userIdDisplay')) {
+                    document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
+                }
+            } else {
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
-            } catch (error) {
-                console.error("Authentication failed:", error);
-                showNotification("Could not connect to the database.", "error");
-                setLoading(false);
             }
+        } catch (error) {
+            console.error("Authentication failed:", error);
+            showNotification("Could not connect to the database.", "error");
+        } finally {
+             setLoading(false); // ALWAYS hide the loading screen after auth attempt
         }
     });
 
@@ -329,8 +330,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
                 break;
             case 'custom':
-                startDate = new Date(customDates.start);
-                endDate = new Date(customDates.end);
+                if (customDates.start && customDates.end) {
+                    startDate = new Date(customDates.start);
+                    endDate = new Date(customDates.end);
+                } else {
+                    return betsArray; // Return all bets if custom dates are not set
+                }
                 break;
             case 'all':
             default:
