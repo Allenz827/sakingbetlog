@@ -16,7 +16,8 @@ try {
     auth = getAuth(app);
 } catch (error) {
     console.error("Firebase initialization failed:", error);
-    // showNotification("Failed to initialize Firebase. Check your configuration.", "error");
+    showNotification("Failed to initialize Firebase. Check your configuration.", "error");
+    setLoading(false);
 }
 
 
