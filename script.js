@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSortCriteria = 'date_desc';
     let betsCollectionRef; // Will be set after user logs in
     let unsubscribeFromBets; // To detach the Firestore listener
+    let isDbReady = false; // Flag to check if Firestore is ready
 
     const currencies = {
         'USD': { symbol: '$', code: 'USD' },
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationContainer = document.getElementById('notification-container');
     const notificationMessage = document.getElementById('notification-message');
     const notificationElement = document.getElementById('notification');
+    const loadingOverlay = document.getElementById('loadingOverlay'); // For loading state
 
     // --- HELPER FUNCTIONS ---
     const getManilaDateString = () => {
@@ -66,6 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
         notificationElement.classList.add(type);
         notificationContainer.classList.add('show');
         setTimeout(() => notificationContainer.classList.remove('show'), 3000);
+    };
+    
+    const setLoading = (isLoading) => {
+        if (loadingOverlay) {
+            loadingOverlay.style.display = isLoading ? 'flex' : 'none';
+        }
     };
 
     // --- THEME & CURRENCY ---
@@ -98,33 +106,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- FIREBASE AUTHENTICATION & DATA HANDLING ---
     onAuthStateChanged(auth, user => {
         if (user) {
-            // User is signed in.
             console.log("User signed in with UID:", user.uid);
-            // Define the collection reference for this user's bets
             betsCollectionRef = collection(db, "users", user.uid, "bets");
-            // Start listening for real-time updates
+            isDbReady = true;
+            setLoading(false); // Hide loading overlay
             listenForBets();
         } else {
-            // User is signed out. Sign in anonymously.
             signInAnonymously(auth).catch(error => {
                 console.error("Anonymous sign-in failed:", error);
                 showNotification("Could not connect to the database.", "error");
+                setLoading(false);
             });
         }
     });
 
     const listenForBets = () => {
-        // Detach any previous listener
         if (unsubscribeFromBets) unsubscribeFromBets();
-
-        // Create a query to get bets, ordered by date
+        
+        // Firestore requires an index for compound queries. 
+        // For simplicity, we sort on the client-side after fetching.
+        // We will still order by date descending by default from Firestore.
         const q = query(betsCollectionRef, orderBy("date", "desc"));
 
-        // onSnapshot listens for real-time changes
         unsubscribeFromBets = onSnapshot(q, (snapshot) => {
             bets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-            
-            // If we are on the dashboard, update the UI
             if (document.getElementById('profitChart')) {
                 updateUI();
             }
@@ -144,8 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         addBetForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!betsCollectionRef) {
-                showNotification("Not connected to database. Please refresh.", "error");
+            if (!isDbReady || !betsCollectionRef) {
+                showNotification("Database not ready. Please wait a moment and try again.", "error");
                 return;
             }
             const newBet = {
@@ -195,7 +200,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const filterBets = (period, customDates = {}) => {
-            // This function now filters the global 'bets' array populated by Firestore
             const now = new Date();
             let startDate, endDate = new Date(now.setHours(23, 59, 59, 999));
             switch (period) {
@@ -262,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayBetList = (sortedBets) => {
             const betList = document.getElementById('betList');
             betList.innerHTML = '';
-            if(sortedBets.length === 0){
+            if(sortedBets.length === 0 && isDbReady){
                 betList.innerHTML = `<tr><td colspan="9" style="text-align:center;">No bets found. Log your first bet!</td></tr>`;
                 return;
             }
@@ -345,7 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         await deleteDoc(betDocRef);
                         showNotification('Bet deleted successfully.', 'success');
-                        // UI will update automatically via onSnapshot
                     } catch (error) {
                         showNotification('Failed to delete bet.', 'error');
                         console.error("Delete error:", error);
@@ -406,13 +409,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- IMPORT/EXPORT LOGIC ---
         document.getElementById('exportBtn').addEventListener('click', () => {
             if(bets.length === 0) { showNotification('No bets to export.', 'error'); return; }
-            const worksheet = XLSX.utils.json_to_sheet(bets.map(({id, ...rest}) => rest)); // Exclude Firestore ID
+            const worksheet = XLSX.utils.json_to_sheet(bets.map(({id, ...rest}) => rest));
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Bets");
             XLSX.writeFile(workbook, "BetTracker_Export.xlsx");
         });
 
         document.getElementById('importFile').addEventListener('change', (e) => {
+            if (!isDbReady) {
+                showNotification("Database not ready. Please wait a moment and try again.", "error");
+                e.target.value = '';
+                return;
+            }
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -420,25 +428,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const data = new Uint8Array(event.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
-                    // Use cellDates: true to properly parse dates from Excel
                     const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { cellDates: true });
 
                     const validNewBets = json
                         .filter(i => i.date instanceof Date && i.stake != null && i.odds != null && i.result)
                         .map(bet => {
-                            // Convert the JS Date object to a 'YYYY-MM-DD' string
                             const date = new Date(bet.date);
-                            // Adjust for timezone offset to prevent the date from being off by one day
                             const tzoffset = date.getTimezoneOffset() * 60000;
                             const localISOTime = (new Date(date - tzoffset)).toISOString().split('T')[0];
-                            
-                            return {
-                                ...bet,
-                                date: localISOTime,
-                                // Ensure stake and odds are correctly parsed as numbers
-                                stake: parseFloat(bet.stake),
-                                odds: parseFloat(bet.odds)
-                            };
+                            return { ...bet, date: localISOTime, stake: parseFloat(bet.stake), odds: parseFloat(bet.odds) };
                         });
 
                     if (validNewBets.length === 0) {
@@ -466,5 +464,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Run universal setup on all pages
+    setLoading(true); // Show loading on initial load
     initUniversalControls();
 });
