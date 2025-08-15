@@ -419,10 +419,33 @@ document.addEventListener('DOMContentLoaded', () => {
             reader.onload = (event) => {
                 try {
                     const data = new Uint8Array(event.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                    const validNewBets = json.filter(i => i.date && i.stake != null && i.odds != null && i.result);
-                    if (validNewBets.length === 0) { showNotification('No valid bets found in the file.', 'error'); return; }
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    // Use cellDates: true to properly parse dates from Excel
+                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { cellDates: true });
+
+                    const validNewBets = json
+                        .filter(i => i.date instanceof Date && i.stake != null && i.odds != null && i.result)
+                        .map(bet => {
+                            // Convert the JS Date object to a 'YYYY-MM-DD' string
+                            const date = new Date(bet.date);
+                            // Adjust for timezone offset to prevent the date from being off by one day
+                            const tzoffset = date.getTimezoneOffset() * 60000;
+                            const localISOTime = (new Date(date - tzoffset)).toISOString().split('T')[0];
+                            
+                            return {
+                                ...bet,
+                                date: localISOTime,
+                                // Ensure stake and odds are correctly parsed as numbers
+                                stake: parseFloat(bet.stake),
+                                odds: parseFloat(bet.odds)
+                            };
+                        });
+
+                    if (validNewBets.length === 0) {
+                        showNotification('No valid bets found in the file. Check date format and required fields.', 'error');
+                        return;
+                    }
+
                     if (confirm(`This will add ${validNewBets.length} new bets from the file. Continue?`)) {
                         const promises = validNewBets.map(bet => addDoc(betsCollectionRef, bet));
                         Promise.all(promises).then(() => {
@@ -433,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
                 } catch (error) {
-                    showNotification('Failed to read the file.', 'error');
+                    showNotification('Failed to read the file. Please ensure it is a valid Excel file.', 'error');
                     console.error("Import error:", error);
                 }
             };
