@@ -123,9 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const listenForBets = () => {
         if (unsubscribeFromBets) unsubscribeFromBets();
         
-        // Firestore requires an index for compound queries. 
-        // For simplicity, we sort on the client-side after fetching.
-        // We will still order by date descending by default from Firestore.
         const q = query(betsCollectionRef, orderBy("date", "desc"));
 
         unsubscribeFromBets = onSnapshot(q, (snapshot) => {
@@ -431,12 +428,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { cellDates: true });
 
                     const validNewBets = json
-                        .filter(i => i.date instanceof Date && i.stake != null && i.odds != null && i.result)
+                        .filter(i => (i.date instanceof Date || typeof i.date === 'string') && i.stake != null && i.odds != null && i.result)
                         .map(bet => {
-                            const date = new Date(bet.date);
-                            const tzoffset = date.getTimezoneOffset() * 60000;
-                            const localISOTime = (new Date(date - tzoffset)).toISOString().split('T')[0];
-                            return { ...bet, date: localISOTime, stake: parseFloat(bet.stake), odds: parseFloat(bet.odds) };
+                            let formattedDate;
+                            if (bet.date instanceof Date) {
+                                const date = new Date(bet.date);
+                                const tzoffset = date.getTimezoneOffset() * 60000;
+                                formattedDate = (new Date(date - tzoffset)).toISOString().split('T')[0];
+                            } else {
+                                // Assumes the string is already in 'YYYY-MM-DD' format
+                                formattedDate = bet.date;
+                            }
+                            
+                            // Remove the old 'id' property if it exists from localStorage export
+                            const { id, ...restOfBet } = bet;
+
+                            return { 
+                                ...restOfBet, 
+                                date: formattedDate, 
+                                stake: parseFloat(bet.stake), 
+                                odds: parseFloat(bet.odds) 
+                            };
                         });
 
                     if (validNewBets.length === 0) {
