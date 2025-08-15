@@ -9,6 +9,12 @@
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
 <body>
+    <!-- LOADING OVERLAY -->
+    <div id="loadingOverlay">
+        <div class="loader"></div>
+        <p>Connecting to database...</p>
+    </div>
+
     <div class="container">
         <!-- HEADER -->
         <header class="glass-card">
@@ -34,6 +40,9 @@
         </nav>
 
         <main>
+            <!-- USER ID DISPLAY -->
+            <p id="userIdDisplay" class="user-id-text"></p>
+
             <!-- FILTERS -->
             <div class="filter-controls">
                 <button class="filter-btn active" data-period="all">All Time</button>
@@ -72,9 +81,17 @@
                     <h3>Total Bets</h3>
                     <p id="totalBets">0</p>
                 </div>
-                 <div class="stat-card glass-card">
-                    <h3>Avg. Stake</h3>
-                    <p id="avgStake">₱0.00</p>
+                <div class="stat-card glass-card">
+                    <h3>Won Bets</h3>
+                    <p id="wonBets">0</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>Lost Bets</h3>
+                    <p id="lostBets">0</p>
+                </div>
+                <div class="stat-card glass-card">
+                    <h3>Pending Bets</h3>
+                    <p id="pendingBets">0</p>
                 </div>
             </div>
 
@@ -83,44 +100,44 @@
                 <canvas id="profitChart"></canvas>
             </div>
 
-            <!-- BET LIST -->
-            <div class="bet-list-container glass-card">
-                <div class="bet-list-header">
-                    <h2>Recent Bets</h2>
-                    <div class="sort-controls">
+            <!-- BETS TABLE & CONTROLS -->
+            <div class="table-container glass-card">
+                <div class="io-controls">
+                    <div class="sort-control">
                         <label for="sortSelector">Sort by:</label>
                         <select id="sortSelector">
                             <option value="date_desc">Date (Newest)</option>
                             <option value="date_asc">Date (Oldest)</option>
-                            <option value="result">Result</option>
-                            <option value="stake_desc">Stake (High-Low)</option>
-                            <option value="stake_asc">Stake (Low-High)</option>
-                            <option value="profit_desc">P/L (High-Low)</option>
+                            <option value="stake_desc">Stake (High)</option>
+                            <option value="stake_asc">Stake (Low)</option>
+                            <option value="odds_desc">Odds (High)</option>
+                            <option value="odds_asc">Odds (Low)</option>
                         </select>
                     </div>
+                    <div class="export-import-controls">
+                        <label for="importFile" class="import-label">
+                            <i class="ph-fill ph-upload"></i> Import CSV/XLSX
+                        </label>
+                        <input type="file" id="importFile" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+                        <button id="exportButton" class="action-btn"><i class="ph-fill ph-download"></i> Export</button>
+                    </div>
                 </div>
-                 <div class="io-controls">
-                     <button id="exportBtn"><i class="ph-fill ph-file-arrow-down"></i> Export</button>
-                     <label for="importFile" class="import-label"><i class="ph-fill ph-file-arrow-up"></i> Import</label>
-                     <input type="file" id="importFile" accept=".xlsx, .xls" style="display: none;">
-                </div>
-                <div style="overflow-x: auto;">
+                <div class="responsive-table">
                     <table id="betTable">
                         <thead>
                             <tr>
                                 <th>Date</th>
                                 <th>Sport</th>
-                                <th>Bet Details</th>
+                                <th>Details</th>
                                 <th>Stake</th>
                                 <th>Odds</th>
                                 <th>Result</th>
                                 <th>P/L</th>
-                                <th>Notes</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="betList">
-                            <!-- Bets will be dynamically inserted here -->
+                            <!-- Bet rows will be injected here by JavaScript -->
                         </tbody>
                     </table>
                 </div>
@@ -128,25 +145,25 @@
         </main>
     </div>
 
-    <!-- EDIT MODAL -->
-    <div id="editModal" class="modal">
+    <!-- EDIT BET MODAL -->
+    <div id="editModal" class="modal-overlay">
         <div class="modal-content glass-card">
             <div class="modal-header">
                 <h2>Edit Bet</h2>
-                <button class="close-button">&times;</button>
+                <button id="closeEditModal" class="close-button">&times;</button>
             </div>
-            <form id="editForm">
+            <form id="editBetForm" class="form-grid">
                 <div class="form-group">
                     <label for="edit-date">Date:</label>
                     <input type="date" id="edit-date" required>
                 </div>
                 <div class="form-group">
                     <label for="edit-sport">Sport:</label>
-                    <input type="text" id="edit-sport" placeholder="e.g., Basketball, Soccer" required>
+                    <input type="text" id="edit-sport" required>
                 </div>
                 <div class="form-group full-width">
-                    <label for="edit-details">Bet Details:</label>
-                    <input type="text" id="edit-details" placeholder="e.g., Team A to Win" required>
+                    <label for="edit-details">Details:</label>
+                    <input type="text" id="edit-details" required>
                 </div>
                 <div class="form-group">
                     <label for="edit-stake">Stake:</label>
@@ -175,6 +192,21 @@
         </div>
     </div>
     
+    <!-- CUSTOM CONFIRMATION MODAL -->
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h2>Confirmation</h2>
+                <button id="closeConfirmModal" class="close-button">&times;</button>
+            </div>
+            <p id="confirmMessage"></p>
+            <div class="modal-actions">
+                <button id="cancelBtn" class="action-btn">Cancel</button>
+                <button id="confirmBtn" class="action-btn danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NOTIFICATION CONTAINER -->
     <div id="notification-container" class="notification-container">
         <div id="notification" class="notification glass-card">
@@ -185,8 +217,5 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="script.js" type="module"></script>
-    </body>
+</body>
 </html>
-
-
-
