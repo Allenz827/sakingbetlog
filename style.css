@@ -103,7 +103,6 @@ header h1 {
     align-items: center;
     gap: 8px;
 }
-
 .icon-btn:hover, .main-nav a:hover, .filter-btn:hover, .action-btn:hover, .io-controls button:hover, .import-label:hover, form button:hover {
     background-color: var(--secondary-accent);
     color: #fff;
@@ -124,123 +123,167 @@ header h1 {
     margin-bottom: 20px;
 }
 
-.main-nav a { text-decoration: none; }
+.main-nav a {
+    flex: 1;
+    text-align: center;
+    text-decoration: none;
+    font-family: 'Orbitron', sans-serif;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* --- Dashboard Specific Styles --- */
+.user-id-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 10px;
+}
 
 .filter-controls {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-bottom: 20px;
     align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
 }
-
+.filter-controls .filter-btn {
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    border-radius: 20px;
+}
 .custom-date-filter {
     display: flex;
-    gap: 5px;
     align-items: center;
+    gap: 5px;
 }
-
-input, select {
-    padding: 10px;
+.custom-date-filter input[type="date"] {
+    background: var(--primary-accent);
     border: 1px solid var(--glass-border);
+    padding: 8px 10px;
     border-radius: 8px;
-    background-color: var(--surface-color);
     color: var(--text-primary);
-    font-size: 1rem;
+    font-family: 'Roboto', sans-serif;
 }
-
-input[type="date"]::-webkit-calendar-picker-indicator {
+.custom-date-filter input[type="date"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
+    opacity: 0.7;
+    cursor: pointer;
 }
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 20px;
-    margin-bottom: 30px;
 }
 
 .stat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
 }
-
 .stat-card h3 {
     font-size: 1rem;
     color: var(--text-secondary);
-    margin-bottom: 10px;
-    font-weight: 400;
+    margin-bottom: 5px;
 }
-
 .stat-card p {
-    font-family: 'Orbitron', sans-serif;
     font-size: 2rem;
-    font-weight: bold;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
 }
-
-.positive { color: var(--positive-color); text-shadow: 0 0 8px var(--positive-color); }
-.negative { color: var(--negative-color); text-shadow: 0 0 8px var(--negative-color); }
+.stat-card p.positive {
+    color: var(--positive-color);
+}
+.stat-card p.negative {
+    color: var(--negative-color);
+}
 
 .chart-container {
-    margin-bottom: 30px;
     height: 400px;
+    padding: 20px;
 }
 
-.bet-list-header {
+.table-container {
+    padding: 20px;
+}
+.io-controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
     flex-wrap: wrap;
     gap: 15px;
+    margin-bottom: 15px;
 }
-
-.bet-list-header h2 {
-    font-family: 'Orbitron', sans-serif;
+.sort-control select {
+    background: var(--primary-accent);
+    border: 1px solid var(--glass-border);
+    padding: 8px;
+    border-radius: 8px;
+    color: var(--text-primary);
 }
-
-.sort-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.import-label {
+    display: inline-block;
+    padding: 8px 15px;
+    cursor: pointer;
 }
-
-.io-controls {
-    display: flex;
-    gap: 10px;
+#importFile {
+    display: none;
 }
-
+.responsive-table {
+    overflow-x: auto;
+}
 #betTable {
     width: 100%;
     border-collapse: collapse;
-}
-
-#betTable th, #betTable td {
-    padding: 15px;
+    font-size: 0.9rem;
     text-align: left;
+}
+#betTable thead {
     border-bottom: 1px solid var(--glass-border);
 }
+#betTable th, #betTable td {
+    padding: 12px 15px;
+    vertical-align: middle;
+}
+#betTable tbody tr:hover {
+    background: var(--primary-accent);
+}
 
-#betTable th {
+.status-badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
     font-weight: bold;
-    text-transform: uppercase;
-    color: var(--text-secondary);
+    color: #fff;
+    text-transform: capitalize;
+}
+.status-badge.won { background-color: var(--positive-color); }
+.status-badge.lost { background-color: var(--negative-color); }
+.status-badge.pending { background-color: var(--pending-color); }
+.status-badge.void { background-color: var(--void-color); }
+
+.action-cell {
+    white-space: nowrap;
+}
+.action-btn {
+    padding: 5px 10px;
+    background-color: var(--primary-accent);
+    border: none;
+}
+.action-btn i {
+    color: var(--text-primary);
 }
 
-#betTable tr:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-.result-won { color: var(--positive-color); font-weight: bold; }
-.result-lost { color: var(--negative-color); font-weight: bold; }
-.result-pending { color: var(--pending-color); font-weight: bold; }
-.result-void { color: var(--void-color); font-weight: bold; }
-
-.action-btn { padding: 8px 12px; }
-.edit-btn { background-color: #f7b801; border-color: #f7b801; color: #1a1a2e; }
-.delete-btn { background-color: var(--negative-color); border-color: var(--negative-color); color: #fff; }
-
-/* Form Styles */
-form {
+/* --- Add Bet Page Specific Styles --- */
+.form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
@@ -248,48 +291,68 @@ form {
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
 }
-.full-width {
+.form-group.full-width {
     grid-column: 1 / -1;
 }
-form label {
-    font-weight: bold;
+.form-grid label {
+    margin-bottom: 5px;
     color: var(--text-secondary);
 }
-form button {
-    grid-column: 1 / -1;
-    padding: 15px;
-    font-size: 1.2rem;
-    background-color: var(--secondary-accent);
+.form-grid input, .form-grid select, .form-grid textarea {
+    background: var(--background-secondary);
+    border: 1px solid var(--glass-border);
+    padding: 12px;
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: 'Roboto', sans-serif;
+    transition: border-color var(--transition-speed);
+}
+.form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus {
+    outline: none;
     border-color: var(--secondary-accent);
+}
+.form-grid textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+.form-grid button {
+    grid-column: 1 / -1;
+    margin-top: 10px;
+    padding: 15px;
+    border: none;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem;
+    background: linear-gradient(45deg, var(--primary-accent), var(--secondary-accent));
     color: #fff;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    border-radius: 8px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.form-grid button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
 }
 
-/* Modal & Notification Styles */
-.modal, .notification-container {
+/* --- Modal Styles --- */
+.modal-overlay {
     position: fixed;
-    z-index: 1000;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    display: flex;
-    align-items: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: none;
     justify-content: center;
-    background-color: rgba(0,0,0,0.7);
-    backdrop-filter: blur(5px);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity var(--transition-speed) ease, visibility var(--transition-speed) ease;
-}
-.modal.show, .notification-container.show {
-    opacity: 1;
-    visibility: visible;
+    align-items: center;
+    z-index: 1000;
 }
 .modal-content {
+    padding: 25px;
     width: 90%;
     max-width: 500px;
+    position: relative;
 }
 .modal-header {
     display: flex;
@@ -299,6 +362,7 @@ form button {
 }
 .modal-header h2 {
     font-family: 'Orbitron', sans-serif;
+    color: var(--secondary-accent);
 }
 .close-button {
     background: none;
@@ -306,6 +370,34 @@ form button {
     font-size: 2rem;
     color: var(--text-secondary);
     cursor: pointer;
+}
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+.modal-actions .action-btn {
+    padding: 10px 20px;
+}
+.modal-actions .danger {
+    background-color: var(--negative-color);
+    border-color: var(--negative-color);
+    color: #fff;
+}
+.modal-actions .danger:hover {
+    background-color: transparent;
+    color: var(--negative-color);
+    box-shadow: 0 0 10px var(--negative-color);
+}
+
+/* --- Notification Styles --- */
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    overflow: hidden;
 }
 .notification {
     padding: 20px 30px;
@@ -318,6 +410,36 @@ form button {
 }
 .notification.success { border-color: var(--positive-color); }
 .notification.error { border-color: var(--negative-color); }
+
+/* --- Loading Overlay --- */
+#loadingOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1001;
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+}
+.loader {
+    width: 60px;
+    height: 60px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--secondary-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
 
 /* Responsive Design */
 @media (max-width: 768px) {
@@ -334,23 +456,40 @@ form button {
         margin-bottom: 15px;
         border: 1px solid var(--glass-border);
         border-radius: var(--border-radius);
-        padding: 10px;
+        padding: 15px;
+        position: relative;
+        background: var(--surface-color);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
     }
     #betTable td {
-        padding: 8px 10px;
-        border: none;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        text-align: right;
+        padding-left: 50%;
+        position: relative;
     }
     #betTable td::before {
         content: attr(data-label);
+        position: absolute;
+        left: 0;
+        width: 50%;
+        padding-left: 15px;
         font-weight: bold;
+        text-align: left;
         color: var(--text-secondary);
-        margin-right: 10px;
     }
-    #betTable td:last-child {
-        justify-content: flex-start;
+    .io-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .io-controls .sort-control, .io-controls .export-import-controls {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
         gap: 10px;
+    }
+    .custom-date-filter {
+        flex-direction: column;
+        width: 100%;
     }
 }
