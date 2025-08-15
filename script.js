@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmMessage = document.getElementById('confirmMessage');
     const confirmBtn = document.getElementById('confirmBtn');
     const cancelBtn = document.getElementById('cancelBtn');
-
+    
     // --- HELPER FUNCTIONS ---
     const getManilaDateString = () => {
         const now = new Date();
@@ -232,8 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Apply color based on net profit
         const netProfitElement = document.getElementById('netProfit');
-        netProfitElement.classList.toggle('positive', totalProfit >= 0);
-        netProfitElement.classList.toggle('negative', totalProfit < 0);
+        if (netProfitElement) {
+            netProfitElement.classList.toggle('positive', totalProfit >= 0);
+            netProfitElement.classList.toggle('negative', totalProfit < 0);
+        }
     };
 
     const renderProfitChart = (filteredBets) => {
@@ -370,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!betList) return;
         betList.innerHTML = '';
         if (sortedBets.length === 0) {
-            betList.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No bets found for this period.</td></tr>';
+            betList.innerHTML = '<tr><td colspan="8" class="text-center text-secondary">No bets found for this period.</td></tr>';
             return;
         }
 
