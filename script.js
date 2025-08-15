@@ -10,17 +10,18 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
 
 // Initialize Firebase
 let app, db, auth;
+let isFirebaseInitialized = false;
+
 try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
+    isFirebaseInitialized = true;
 } catch (error) {
     console.error("Firebase initialization failed:", error);
     showNotification("Failed to initialize Firebase. Check your configuration.", "error");
-    // Ensure loading is turned off even if initialization fails
     setLoading(false);
 }
-
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBAL STATE & CONFIG ---
@@ -112,33 +113,36 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- FIREBASE AUTHENTICATION & DATA HANDLING ---
-    onAuthStateChanged(auth, async (user) => {
-        try {
-            if (user) {
-                console.log("User signed in with UID:", user.uid);
-                userId = user.uid;
-                // The collection path MUST include the app ID and user ID for proper security rules
-                const collectionPath = `/artifacts/${appId}/users/${userId}/bets`;
-                betsCollectionRef = collection(db, collectionPath);
-                isDbReady = true;
-                listenForBets();
-                if (document.getElementById('userIdDisplay')) {
-                    document.getElementById('userIdDisplay').textContent = `User ID: ${userId}`;
-                }
-            } else {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
+    if (isFirebaseInitialized) {
+        onAuthStateChanged(auth, async (user) => {
+            try {
+                if (user) {
+                    console.log("User signed in with UID:", user.uid);
+                    userId = user.uid;
+                    // The collection path MUST include the app ID and user ID for proper security rules
+                    const collectionPath = `/artifacts/${appId}/users/${userId}/bets`;
+                    betsCollectionRef = collection(db, collectionPath);
+                    isDbReady = true;
+                    listenForBets();
+                    const userIdDisplay = document.getElementById('userIdDisplay');
+                    if (userIdDisplay) {
+                        userIdDisplay.textContent = `User ID: ${userId}`;
+                    }
                 } else {
-                    await signInAnonymously(auth);
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
                 }
+            } catch (error) {
+                console.error("Authentication failed:", error);
+                showNotification("Could not connect to the database.", "error");
+            } finally {
+                setLoading(false); // ALWAYS hide the loading screen after auth attempt
             }
-        } catch (error) {
-            console.error("Authentication failed:", error);
-            showNotification("Could not connect to the database.", "error");
-        } finally {
-             setLoading(false); // ALWAYS hide the loading screen after auth attempt
-        }
-    });
+        });
+    }
 
     const listenForBets = () => {
         if (unsubscribeFromBets) unsubscribeFromBets();
@@ -160,22 +164,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UNIFIED UI UPDATE FUNCTION ---
     const updateAllUI = () => {
-        if (!document.getElementById('betList')) return; // Exit if not on the dashboard page
-        
-        const activeFilter = document.querySelector('.filter-btn.active');
-        const period = activeFilter ? activeFilter.dataset.period : 'all';
-        let customDates = {};
-        if (period === 'custom') {
-            customDates.start = document.getElementById('startDate').value;
-            customDates.end = document.getElementById('endDate').value;
+        if (document.getElementById('betList')) {
+            const activeFilter = document.querySelector('.filter-btn.active');
+            const period = activeFilter ? activeFilter.dataset.period : 'all';
+            let customDates = {};
+            if (period === 'custom') {
+                customDates.start = document.getElementById('startDate').value;
+                customDates.end = document.getElementById('endDate').value;
+            }
+            const filteredBets = filterBets(bets, period, customDates);
+            const sortedBets = sortBets(filteredBets, currentSortCriteria);
+            displayStats(filteredBets);
+            displayBetList(sortedBets);
+            renderProfitChart(filteredBets);
         }
-
-        const filteredBets = filterBets(bets, period, customDates);
-        const sortedBets = sortBets(filteredBets, currentSortCriteria);
-        
-        displayStats(filteredBets);
-        displayBetList(sortedBets);
-        renderProfitChart(filteredBets);
     };
 
     // --- PAGE-SPECIFIC LOGIC ---
@@ -532,16 +534,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return null;
                             }
                             return {
-                                date: bet.date.toISOString().split('T')[0], // Assuming date is a Date object from XLSX
-                                sport: bet.sport.toString(),
-                                details: bet.details.toString(),
+                                date: bet.date,
+                                sport: bet.sport,
+                                details: bet.details,
                                 stake: parseFloat(bet.stake),
-                                odds: parseFloat(bet.odds)
+                                odds: parseFloat(bet.odds),
+                                result: bet.result || 'Pending',
+                                notes: bet.notes || '',
                             };
                         }).filter(bet => bet !== null);
 
                         if (validNewBets.length === 0) {
-                            showNotification('No valid bets found in the file. Check date format and required fields.', 'error');
+                            showNotification('No valid bets found in the file. Check required fields (date, sport, details, stake, odds).', 'error');
                             return;
                         }
 
@@ -551,6 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
                              try {
                                  await Promise.all(promises);
                                  showNotification(`${validNewBets.length} bets imported successfully.`, 'success');
+                                 updateAllUI();
                              } catch (err) {
                                 showNotification(`Error importing bets.`, 'error');
                                 console.error(err);
@@ -595,7 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initUniversalControls();
     
     // Check if on dashboard page and if so, set up event listeners.
-    if (document.getElementById('betList')) {
+    if (document.getElementById('betList') || document.getElementById('addBetForm')) {
         setupEventListeners();
     }
 });
