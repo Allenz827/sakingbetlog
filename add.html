@@ -31,10 +31,13 @@
             <a href="index.html"><i class="ph-fill ph-chart-pie-slice"></i> Dashboard</a>
             <a href="add.html" class="active"><i class="ph-fill ph-plus-circle"></i> Add Bet</a>
         </nav>
+        
+        <!-- User ID Display -->
+        <div id="userIdDisplay" class="user-id-display"></div>
 
-        <main class="glass-card">
-            <form id="addBetForm" class="form-grid">
-                <div class="form-group">
+        <main class="main-form-container">
+            <form id="addBetForm" class="glass-card">
+                <div class="form-group full-width">
                     <label for="betDate">Date:</label>
                     <input type="date" id="betDate" required>
                 </div>
@@ -42,8 +45,8 @@
                     <label for="sport">Sport:</label>
                     <input type="text" id="sport" placeholder="e.g., Basketball" required>
                 </div>
-                <div class="form-group full-width">
-                    <label for="betDetails">Bet Details:</label>
+                <div class="form-group">
+                    <label for="betDetails">Details:</label>
                     <input type="text" id="betDetails" placeholder="e.g., Lakers to win vs Celtics" required>
                 </div>
                 <div class="form-group">
@@ -71,6 +74,19 @@
             </form>
         </main>
     </div>
+    
+    <!-- NOTIFICATION CONTAINER -->
+    <div id="notification-container" class="notification-container">
+        <div id="notification" class="notification glass-card">
+            <p id="notification-message"></p>
+        </div>
+    </div>
+    
+    <!-- LOADER OVERLAY -->
+    <div id="loadingOverlay">
+        <div class="loader"></div>
+    </div>
+    
     <script src="script.js" type="module"></script>
 </body>
 </html>
